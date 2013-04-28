@@ -1,0 +1,55 @@
+NOTES
+=====
+
+DILEMMAS
+--------
+- separate kernel thread per one context? one device? one driver?
+  - given later arguments one per device seems OK - this looks nicely separated
+- note that we have two limits
+  - # of contexts, block pending processing in a queue and some swapper thread
+    per device notified by interrupts and new pending blocks
+  - # of blocks, write should wait for available block
+
+WATCH OUT
+---------
+- flexible block size (depends on many factors, do a binary search)
+- we might have many drivers
+- adding command with context that exists in queue and removing context with
+  commands in queue
+- command queue can contain only four different contexts
+
+QUESTIONS
+---------
+- synchronization between write & ioctl
+- partial write when size bigger than size of obtained block
+
+
+DESIGN
+======
+
+CONCEPTS
+--------
+- block : chunk of DMA-enabled memory
+  - organization : block (*)----(1) block_pool (owner)
+  - lifetime : managed by block_pool
+- pool : manages blocks
+  - organization : pool (1)----(1) device (owner)
+  - lifetime : created when registering device, disposed when removing one
+- context : structure describing one opened session with device
+  - lifetime : created in open(), disposed in close()
+  - read :
+    - when pushing to device (no wait)
+    - when pulling from device (wait for end of operation on this context)
+
+ACTORS
+------
+- user :
+- crcdev :
+
+EXECUTION FLOW
+--------------
+
+write() {
+  block = wait_for_block()
+
+}

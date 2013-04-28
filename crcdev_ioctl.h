@@ -16,6 +16,7 @@ struct crcdev_ioctl_set_params {
 #define CRCDEV_IOCTL_SET_PARAMS _IOW('C', 0x00, struct crcdev_ioctl_set_params)
 
 struct crcdev_ioctl_get_result {
+	uint32_t sum;
 };
 #define CRCDEV_IOCTL_GET_RESULT _IOR('C', 0x01, struct crcdev_ioctl_get_result)
 
