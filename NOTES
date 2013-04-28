@@ -1,55 +1,95 @@
 NOTES
 =====
 
-DILEMMAS
---------
-- separate kernel thread per one context? one device? one driver?
-  - given later arguments one per device seems OK - this looks nicely separated
-- note that we have two limits
-  - # of contexts, block pending processing in a queue and some swapper thread
-    per device notified by interrupts and new pending blocks
-  - # of blocks, write should wait for available block
+PENDING DILEMMAS
+----------------
 
 WATCH OUT
 ---------
 - flexible block size (depends on many factors, do a binary search)
-- we might have many drivers
+- we might have many drivers listening on the same irq
 - adding command with context that exists in queue and removing context with
   commands in queue
 - command queue can contain only four different contexts
 
 QUESTIONS
 ---------
-- synchronization between write & ioctl
-- partial write when size bigger than size of obtained block
+Q: synchronization between write & ioctl
+  A: doesn't matter, ioctl can starve
+  ioctl should wait for all blocked write() and then wait for all scheduled tasks
+Q: partial write when size bigger than size of obtained block
+  A: try to avoid, lock on tasks manager
+  if failed and written some data return partial write and when called again, an error
+Q: what should happen when we have sheduled tasks and user calls close()
+Q: whether to loop in interrupt handler or leave interrupt raised
 
+SOLVED PROBLEMS
+---------------
+P: device can consume two tasks while we are still processing first interrupt
+  S: keep our own view on command queue state (own copy of begin mark)
+  note that device will never change end mark, therefore this mark cannot go out of sync
+P: missing slope-activated FETCH_DATA, device processed two tasks but interrupt handler was too slow
+  S: our last hope lies in 
 
 DESIGN
 ======
 
 CONCEPTS
 --------
-- block : chunk of DMA-enabled memory
+- task : chunk of DMA-enabled memory filled with data, assigned to existing session
   - organization : block (*)----(1) block_pool (owner)
-  - lifetime : managed by block_pool
-- pool : manages blocks
-  - organization : pool (1)----(1) device (owner)
-  - lifetime : created when registering device, disposed when removing one
-- context : structure describing one opened session with device
+  - lifetime : created in write(), recycled by device in FETCH_DATA
+  - read : by device itself
+  - written : in write()
+- session : describes one opened session with device
   - lifetime : created in open(), disposed in close()
   - read :
-    - when pushing to device (no wait)
+    - when pushing to free context in device (no wait)
     - when pulling from device (wait for end of operation on this context)
 
-ACTORS
-------
-- user :
-- crcdev :
+INTERRUPT HANDLERS
+------------------
+- all interrupt handlers form critical section must synchronize (spinlock)
+- interrupts sync our own view of command queu with device's one
+- decisions are always based on own view of command queue
+- adding new task to waiting queue enables FETCH_CMD_NONFULL and FETCH_CMD_IDLE
 
-EXECUTION FLOW
---------------
+### FETCH_DATA
+- check if it's our interrupt
+  - if begin marks are out of sync by one unset this interrupt
+  - we do this early but it does NOT secure us from missing another interrupt
+- figure out which context finished and a session associated with it (s)
+  - keep additional counter of last processed
+- update all scheduled metadata
+  - scheduled_count
+- recycle task
+- if scheduled_count(s) == 0
+  - sync context with session
+  - make slot free
+- enable FETCH_CMD_NONFULL (all cases!)
 
-write() {
-  block = wait_for_block()
+### FETCH_CMD_NONFULL
+- check if it's our interrupt
+- if begin marks are out of sync raise FETCH_DATA interrupt
+- if waiting task's session has associated context
+  - remove from waiting tasks queue
+  - place appropriate command in commands queue
+  - update commands queue end
+    - note that it's always in sync with our own view of the queue
+      (device never changes queue end marker, it will never go out of sync)
+- else if waiting task's session has no associated context
+  - if there is a free context
+    - associate context with waiting task's session
+    - sync session context to device context
+    - place appropriate command in commands queue
+    - update commands queue end (note as above)
+  - there is no free context
+    - proceed as if there was no waiting task
+- else there is no waiting task
+  - disable FETCH_CMD_NONFULL
 
-}
+### FETCH_CMD_IDLE
+- if begin marks are out of sync raise FETCH_DATA interrupt
+- otherwise disable FETCH_CMD_IDLE
+  - these two solve lost interrupt problem
+

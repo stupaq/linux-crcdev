@@ -1,10 +1,19 @@
+# Kbuild
+obj-m += crcdev.o
+crcdev-objs := module.o pci.o
+
+# Makefile
 KDIR ?= /lib/modules/`uname -r`/build
+MAKE_OPTS := -C $(KDIR) M=$(PWD) W=1 C=2 CF="-D__CHECK_ENDIAN__"
 
 default:
-		$(MAKE) -C $(KDIR) M=$$PWD
+	$(MAKE) $(MAKE_OPTS)
 
 install:
-		$(MAKE) -C $(KDIR) M=$$PWD modules_install
+	$(MAKE) $(MAKE_OPTS) modules_install
 
 clean:
-		$(MAKE) -C $(KDIR) M=$$PWD clean
+	$(MAKE) $(MAKE_OPTS) clean
+
+help:
+	$(MAKE) $(MAKE_OPTS) help
