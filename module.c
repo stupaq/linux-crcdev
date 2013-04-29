@@ -2,6 +2,7 @@
 #include <linux/module.h>
 
 #include "pci.h"
+#include "cexcept.h"
 
 MODULE_AUTHOR("Mateusz Machalica");
 MODULE_LICENSE("GPL");
@@ -11,20 +12,20 @@ MODULE_DESCRIPTION("crcdev driver");
 static void cleanup_crcdev(void)
 {
 	printk(KERN_DEBUG "crcdev: unloading crcdev module.");
-	crcdev_pci_exit();
+	crc_pci_exit();
 }
 
 static int __init init_crcdev(void)
 {
 	int rv = 0;
 	printk(KERN_DEBUG "crcdev: loading crcdev module.");
-	if ((rv = crcdev_pci_init()) < 0)
+	if ((rv = crc_pci_init()) < 0)
 		goto fail;
 
 	return rv;
 fail:
 	cleanup_crcdev();
-	return rv;
+	return ERROR(rv);
 }
 
 module_init(init_crcdev);

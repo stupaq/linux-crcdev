@@ -11,6 +11,9 @@ WATCH OUT
 - adding command with context that exists in queue and removing context with
   commands in queue
 - command queue can contain only four different contexts
+- once you register something it is likely that someone starts using it
+- clear interrupts before registering handler
+- initialize ALL device registers
 
 QUESTIONS
 ---------
