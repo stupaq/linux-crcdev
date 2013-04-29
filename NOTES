@@ -25,6 +25,11 @@ Q: partial write when size bigger than size of obtained block
   if failed and written some data return partial write and when called again, an error
 Q: what should happen when we have sheduled tasks and user calls close()
 Q: whether to loop in interrupt handler or leave interrupt raised
+O: is sharing buffers across devices a good idea/necessity?
+Q: is this a good idea to put headers in DMA allocated blocks
+Q: do we have any alignment restrictions
+Q: do we need to do pci_clear_master() when removing device, or
+pci_disable_device() when request fails
 
 SOLVED PROBLEMS
 ---------------

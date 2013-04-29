@@ -1,6 +1,6 @@
 # Kbuild
 obj-m += crcdev.o
-crcdev-objs := module.o pci.o
+crcdev-objs := module.o pci.o concepts.o
 
 # Makefile
 KDIR ?= /lib/modules/`uname -r`/build

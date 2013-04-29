@@ -1,8 +1,7 @@
 #include <linux/pci.h>
-
 #include "crcdev.h"
 #include "pci.h"
-#include "cexcept.h"
+#include "errors.h"
 #include "concepts.h"
 
 static struct pci_device_id crc_device_ids[] = {
@@ -64,7 +63,7 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 		goto fail_enable;
 	if ((rv = pci_request_regions(pdev, CRCDEV_PCI_NAME)) < 0)
 		goto fail_request;
-	if (!(cdev = kzalloc(sizeof(struct crc_device), GFP_KERNEL))) {
+	if (!(cdev = crc_device_alloc(pdev))) {
 		rv = -ENOMEM;
 		goto fail;
 	}
@@ -97,15 +96,16 @@ static void crc_remove(struct pci_dev *pdev) {
 	printk(KERN_INFO "crcdev: removing PCI device %x:%x:%x.", pdev->vendor,
 			pdev->device, pdev->devfn);
 	if ((cdev = pci_get_drvdata(pdev))) {
+		pci_set_drvdata(pdev, NULL);
 		if (cdev->bar0) {
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
 			// TODO
-			pci_clear_master(pdev); // FIXME is this necessary?
+			pci_clear_master(pdev);
 			pci_iounmap(pdev, cdev->bar0);
 		}
-		pci_set_drvdata(pdev, NULL);
-		kfree(cdev);
+		crc_device_free(pdev, cdev);
+		cdev = NULL;
 	}
 	/* Reordering commented in kernel's Documentation/PCI/pci.txt */
 	pci_disable_device(pdev);

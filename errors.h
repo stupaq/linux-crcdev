@@ -3,4 +3,4 @@
 
 #define ERROR(rv) (rv < 0 ? rv : -EFAULT)
 
-#endif  // CEXCEPT_H_
+#endif  /* CEXCEPT_H_ */
