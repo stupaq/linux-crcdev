@@ -59,27 +59,32 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 			pdev->device, pdev->devfn);
 	/* We nee this assumption in cleanup function */
 	pci_set_drvdata(pdev, NULL);
-	if ((rv = pci_enable_device(pdev)) < 0)
+	if ((rv = pci_enable_device(pdev)))
 		goto fail_enable;
-	if ((rv = pci_request_regions(pdev, CRCDEV_PCI_NAME)) < 0)
+	if ((rv = pci_request_regions(pdev, CRCDEV_PCI_NAME)))
 		goto fail_request;
-	if (!(cdev = crc_device_alloc(pdev))) {
+	if (!(cdev = crc_device_alloc())) {
 		rv = -ENOMEM;
 		goto fail;
 	}
 	pci_set_drvdata(pdev, cdev);
-	if (!(cdev->bar0 = pci_iomap(pdev, CRCDEV_BAR0, 0))) {
+	if (!(cdev->bar0 = pci_iomap(pdev, 0, 0))) {
 		rv = -ENODEV;
 		goto fail;
 	}
-	if ((rv = crc_reset_device(cdev)) < 0)
+	if ((rv = crc_reset_device(cdev)))
 		goto fail;
 	pci_set_master(pdev);
-	if (pci_set_dma_mask(pdev, DMA_BIT_MASK(CRCDEV_DMABITS)) < 0)
+	if ((rv = pci_set_dma_mask(pdev, DMA_BIT_MASK(CRCDEV_DMA_BITS))))
 		goto fail;
-	if (pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(CRCDEV_DMABITS)) < 0)
+	/* FIXME this is a problem with 32 bits */
+	if ((rv = pci_set_consistent_dma_mask(pdev, BIT_MASK(CRCDEV_DMA_BITS))))
+		goto fail;
+	if ((rv = crc_device_dma_alloc((struct device *) pdev, cdev)))
 		goto fail;
 	// TODO
+	printk(KERN_INFO "crcdev: probed PCI %x:%x:%x.", pdev->vendor,
+			pdev->device, pdev->devfn);
 	return rv;
 fail:
 	pci_set_drvdata(pdev, cdev);
@@ -101,13 +106,16 @@ static void crc_remove(struct pci_dev *pdev) {
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
 			// TODO
+			crc_device_dma_free((struct device *) pdev, cdev);
 			pci_clear_master(pdev);
 			pci_iounmap(pdev, cdev->bar0);
 		}
-		crc_device_free(pdev, cdev);
+		crc_device_free(cdev);
 		cdev = NULL;
 	}
 	/* Reordering commented in kernel's Documentation/PCI/pci.txt */
 	pci_disable_device(pdev);
 	pci_release_regions(pdev);
+	printk(KERN_INFO "crcdev: removed PCI device %x:%x:%x.", pdev->vendor,
+			pdev->device, pdev->devfn);
 }

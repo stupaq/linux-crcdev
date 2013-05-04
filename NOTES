@@ -58,7 +58,7 @@ CONCEPTS
 INTERRUPT HANDLERS
 ------------------
 - all interrupt handlers form critical section must synchronize (spinlock)
-- interrupts sync our own view of command queu with device's one
+- interrupts sync our own view of command queue with device's one
 - decisions are always based on own view of command queue
 - adding new task to waiting queue enables FETCH_CMD_NONFULL and FETCH_CMD_IDLE
 

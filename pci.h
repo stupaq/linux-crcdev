@@ -2,8 +2,7 @@
 #define PCI_H_
 
 #define CRCDEV_PCI_NAME	"crcdev"
-#define CRCDEV_BAR0	0
-#define CRCDEV_DMABITS	32
+#define CRCDEV_DMA_BITS	24
 
 __must_check int crc_pci_init(void);
 

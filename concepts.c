@@ -1,23 +1,59 @@
 #include <linux/kernel.h>
+#include <linux/pci.h>
 #include "concepts.h"
 
-// TODO replace with dma_pool/slab allocators
-
-struct crc_device * __must_check crc_device_alloc(struct pci_dev *dev) {
-	dma_addr_t dma_handle;
-	struct crc_device *cdev = dma_alloc_coherent((struct device *) dev,
-			sizeof(struct crc_device), &dma_handle, GFP_KERNEL);
-	if (cdev) {
-		memset(cdev, sizeof(struct crc_device), 0);
-		cdev->cmd_block_len = CRCDEV_CMD_BLOCK_LENGTH;
-		cdev->cmd_block_dma = dma_handle + offsetof(struct crc_device,
-				cmd_block);
+struct crc_device * __must_check crc_device_alloc(void) {
+	struct crc_device *cdev;
+	if ((cdev = kzalloc(sizeof(*cdev), GFP_KERNEL))) {
+		INIT_LIST_HEAD(&cdev->free_tasks);
+		INIT_LIST_HEAD(&cdev->waiting_tasks);
+		INIT_LIST_HEAD(&cdev->scheduled_tasks);
 	}
 	return cdev;
 }
 
-void crc_device_free(struct pci_dev *pdev, struct crc_device *cdev) {
-	dma_free_coherent((struct device *) pdev, sizeof(struct crc_device),
-			cdev, cdev->cmd_block_dma - offsetof(struct crc_device,
-				cmd_block));
+void crc_device_free(struct crc_device *cdev) {
+	kfree(cdev);
+}
+
+int __must_check crc_device_dma_alloc(struct device *pdev,
+		struct crc_device *cdev) {
+	int i;
+	struct crc_task *task;
+	cdev->cmd_block_len = CRCDEV_CMDS_COUNT;
+	cdev->cmd_block = dma_alloc_coherent(pdev, sizeof(*(cdev->cmd_block)) *
+			cdev->cmd_block_len, &cdev->cmd_block_dma, GFP_KERNEL);
+	if (!cdev->cmd_block)
+		goto fail;
+	for (i = 0; i < CRCDEV_BUFFERS_COUNT; i++) {
+		if (!(task = kzalloc(sizeof(*task), GFP_KERNEL)))
+			goto fail;
+		task->data_sz = CRCDEV_BUFFER_SIZE;
+		task->data = dma_alloc_coherent(pdev, task->data_sz,
+				&task->data_dma, GFP_KERNEL);
+		if (!task->data) {
+			/* Free partially created task */
+			kfree(task);
+			goto fail;
+		}
+		list_add(&task->list, &cdev->free_tasks);
+	}
+	return 0;
+fail:
+	crc_device_dma_free(pdev, cdev);
+	return -ENOMEM;
+}
+
+void crc_device_dma_free(struct device *pdev, struct crc_device *cdev) {
+	struct crc_task *task, *tmp;
+	if (cdev->cmd_block) {
+		dma_free_coherent(pdev, sizeof(*cdev->cmd_block) *
+				cdev->cmd_block_len, cdev->cmd_block,
+				cdev->cmd_block_dma);
+	}
+	list_for_each_entry_safe(task, tmp, &cdev->free_tasks, list) {
+		dma_free_coherent(pdev, task->data_sz, task->data,
+				task->data_dma);
+		kfree(task);
+	}
 }
