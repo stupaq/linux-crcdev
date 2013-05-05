@@ -80,7 +80,7 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	/* FIXME this is a problem with 32 bits */
 	if ((rv = pci_set_consistent_dma_mask(pdev, BIT_MASK(CRCDEV_DMA_BITS))))
 		goto fail;
-	if ((rv = crc_device_dma_alloc((struct device *) pdev, cdev)))
+	if ((rv = crc_device_dma_alloc(pdev, cdev)))
 		goto fail;
 	// TODO
 	printk(KERN_INFO "crcdev: probed PCI %x:%x:%x.", pdev->vendor,
@@ -106,7 +106,7 @@ static void crc_remove(struct pci_dev *pdev) {
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
 			// TODO
-			crc_device_dma_free((struct device *) pdev, cdev);
+			crc_device_dma_free(pdev, cdev);
 			pci_clear_master(pdev);
 			pci_iounmap(pdev, cdev->bar0);
 		}

@@ -16,20 +16,21 @@ void crc_device_free(struct crc_device *cdev) {
 	kfree(cdev);
 }
 
-int __must_check crc_device_dma_alloc(struct device *pdev,
+int __must_check crc_device_dma_alloc(struct pci_dev *pdev,
 		struct crc_device *cdev) {
 	int i;
 	struct crc_task *task;
 	cdev->cmd_block_len = CRCDEV_CMDS_COUNT;
-	cdev->cmd_block = dma_alloc_coherent(pdev, sizeof(*(cdev->cmd_block)) *
-			cdev->cmd_block_len, &cdev->cmd_block_dma, GFP_KERNEL);
+	cdev->cmd_block = dma_alloc_coherent(&pdev->dev,
+			sizeof(*(cdev->cmd_block)) * cdev->cmd_block_len,
+			&cdev->cmd_block_dma, GFP_KERNEL);
 	if (!cdev->cmd_block)
 		goto fail;
 	for (i = 0; i < CRCDEV_BUFFERS_COUNT; i++) {
 		if (!(task = kzalloc(sizeof(*task), GFP_KERNEL)))
 			goto fail;
 		task->data_sz = CRCDEV_BUFFER_SIZE;
-		task->data = dma_alloc_coherent(pdev, task->data_sz,
+		task->data = dma_alloc_coherent(&pdev->dev, task->data_sz,
 				&task->data_dma, GFP_KERNEL);
 		if (!task->data) {
 			/* Free partially created task */
@@ -44,15 +45,15 @@ fail:
 	return -ENOMEM;
 }
 
-void crc_device_dma_free(struct device *pdev, struct crc_device *cdev) {
+void crc_device_dma_free(struct pci_dev *pdev, struct crc_device *cdev) {
 	struct crc_task *task, *tmp;
 	if (cdev->cmd_block) {
-		dma_free_coherent(pdev, sizeof(*cdev->cmd_block) *
+		dma_free_coherent(&pdev->dev, sizeof(*cdev->cmd_block) *
 				cdev->cmd_block_len, cdev->cmd_block,
 				cdev->cmd_block_dma);
 	}
 	list_for_each_entry_safe(task, tmp, &cdev->free_tasks, list) {
-		dma_free_coherent(pdev, task->data_sz, task->data,
+		dma_free_coherent(&pdev->dev, task->data_sz, task->data,
 				task->data_dma);
 		kfree(task);
 	}

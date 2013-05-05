@@ -7,7 +7,7 @@
 #include "crcdev.h"
 
 #define	CRCDEV_CMDS_COUNT	32
-#define	CRCDEV_BUFFERS_COUNT	1
+#define	CRCDEV_BUFFERS_COUNT	32
 #define	CRCDEV_BUFFER_SIZE	4096
 
 struct crc_session {
@@ -63,7 +63,7 @@ struct crc_device {
 struct crc_device *crc_device_alloc(void);
 void crc_device_free(struct crc_device *);
 
-int crc_device_dma_alloc(struct device *, struct crc_device *);
-void crc_device_dma_free(struct device *, struct crc_device *);
+int crc_device_dma_alloc(struct pci_dev *, struct crc_device *);
+void crc_device_dma_free(struct pci_dev *, struct crc_device *);
 
 #endif  /* SESSION_H_ */
