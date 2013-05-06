@@ -3,6 +3,7 @@
 #include "pci.h"
 #include "errors.h"
 #include "concepts.h"
+#include "interrupts.h"
 
 static struct pci_device_id crc_device_ids[] = {
 	{ PCI_DEVICE(CRCDEV_VENDOR_ID, CRCDEV_DEVICE_ID) },
@@ -38,7 +39,7 @@ int __must_check crc_pci_intline(struct pci_dev *pdev) {
 	return line;
 }
 
-static int crc_reset_device(struct crc_device *cdev) {
+static void crc_reset_device(struct crc_device *cdev) {
 	void __iomem* bar0 = cdev->bar0;
 	/* Disable FETCH_DATA and FETCH_CMD */
 	iowrite32(0, bar0 + CRCDEV_ENABLE);
@@ -49,7 +50,8 @@ static int crc_reset_device(struct crc_device *cdev) {
 	/* Set empty FETCH_CMD buffer */
 	iowrite32(0, bar0 + CRCDEV_FETCH_CMD_READ_POS);
 	iowrite32(0, bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
-	return 0;
+	/* Clear FETCH_DATA interrupt */
+	iowrite32(0, bar0 + CRCDEV_FETCH_DATA_INTR_ACK);
 }
 
 static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
@@ -72,8 +74,9 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 		rv = -ENODEV;
 		goto fail;
 	}
-	if ((rv = crc_reset_device(cdev)))
-		goto fail;
+	/* This disables interrupts */
+	crc_reset_device(cdev);
+	/* Device won't try to do anything */
 	pci_set_master(pdev);
 	if ((rv = pci_set_dma_mask(pdev, DMA_BIT_MASK(CRCDEV_DMA_BITS))))
 		goto fail;
@@ -82,7 +85,23 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 		goto fail;
 	if ((rv = crc_device_dma_alloc(pdev, cdev)))
 		goto fail;
-	// TODO
+	/* Setup cmd block */
+	iowrite32(cdev->cmd_block_dma, cdev->bar0 + CRCDEV_FETCH_CMD_ADDR);
+	iowrite32(cdev->cmd_block_len, cdev->bar0 + CRCDEV_FETCH_CMD_SIZE);
+	iowrite32(0, cdev->bar0 + CRCDEV_FETCH_CMD_READ_POS);
+	iowrite32(0, cdev->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
+	/* Setup interrupts, device is ready and waiting after this step */
+	if (pdev->irq == 0) {
+		printk(KERN_INFO "crcdev: device cannot generate interrupts");
+		goto fail;
+	}
+	if ((rv = request_irq(pdev->irq, crc_irq_dispatcher, IRQF_SHARED,
+					CRCDEV_PCI_NAME, cdev)))
+		goto fail;
+	/* Enable ALL interrupts ATOMICALLY, device will run after this and idle
+	 * immediately (there is no pending commands yet) */
+	iowrite32(CRCDEV_INTR_ALL, cdev->bar0 + CRCDEV_INTR_ENABLE);
+	/* DEVICE READY */
 	printk(KERN_INFO "crcdev: probed PCI %x:%x:%x.", pdev->vendor,
 			pdev->device, pdev->devfn);
 	return rv;
@@ -96,6 +115,8 @@ fail_enable:
 	return ERROR(rv);
 }
 
+// FIXME does this handle every possible path in crc_probe?
+// FIXME must stop all activity before calling this
 static void crc_remove(struct pci_dev *pdev) {
 	struct crc_device* cdev = NULL;
 	printk(KERN_INFO "crcdev: removing PCI device %x:%x:%x.", pdev->vendor,
@@ -105,9 +126,12 @@ static void crc_remove(struct pci_dev *pdev) {
 		if (cdev->bar0) {
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
-			// TODO
+			// FIXME running interrupt handler here?
+			free_irq(pdev->irq, cdev);
+			/* Free DMA memory before disabling */
 			crc_device_dma_free(pdev, cdev);
 			pci_clear_master(pdev);
+			/* Unmap memory regions */
 			pci_iounmap(pdev, cdev->bar0);
 		}
 		crc_device_free(cdev);
