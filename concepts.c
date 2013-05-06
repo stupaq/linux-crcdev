@@ -1,10 +1,12 @@
 #include <linux/kernel.h>
 #include <linux/pci.h>
+#include <linux/spinlock.h>
 #include "concepts.h"
 
 struct crc_device * __must_check crc_device_alloc(void) {
 	struct crc_device *cdev;
 	if ((cdev = kzalloc(sizeof(*cdev), GFP_KERNEL))) {
+		spin_lock_init(&cdev->dev_lock);
 		INIT_LIST_HEAD(&cdev->free_tasks);
 		INIT_LIST_HEAD(&cdev->waiting_tasks);
 		INIT_LIST_HEAD(&cdev->scheduled_tasks);

@@ -47,6 +47,8 @@ crc_command_set_ctx(struct crc_command *cmd, u8 ctx) {
 }
 
 struct crc_device {
+	/* Locks */
+	spinlock_t dev_lock;
 	/* Tasks for this device */
 	struct list_head free_tasks;
 	struct list_head waiting_tasks;
