@@ -126,19 +126,19 @@ static void crc_remove(struct pci_dev *pdev) {
 		pci_set_drvdata(pdev, NULL);
 		/* BEGIN CRITICAL SECTION */
 		spin_lock_irqsave(&cdev->dev_lock, flags);
+		spin_unlock_irqrestore(&cdev->dev_lock, flags);
+		/* END CRITICAL SECTION */
+		// FIXME running interrupt handler here?
 		if (cdev->bar0) {
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
 			free_irq(pdev->irq, cdev);
-			/* Free DMA memory before disabling */
+			/* Free DMA memory (this needs irqs) before disabling */
 			crc_device_dma_free(pdev, cdev);
 			pci_clear_master(pdev);
 			/* Unmap memory regions */
 			pci_iounmap(pdev, cdev->bar0);
 		}
-		spin_unlock_irqrestore(&cdev->dev_lock, flags);
-		/* END CRITICAL SECTION */
-		// FIXME running interrupt handler here?
 		crc_device_free(cdev);
 		cdev = NULL;
 	}
