@@ -4,6 +4,7 @@
 #include <asm/types.h>
 #include <linux/pci.h>
 #include <linux/list.h>
+#include <linux/cdev.h>
 #include "crcdev.h"
 
 #define	CRCDEV_CMDS_COUNT	32
@@ -62,7 +63,9 @@ struct crc_device {
 	struct crc_command *cmd_block;
 	/* Sysfs device */
 	struct device *sysfs_dev;
-	/* Device minor number */
+	/* Char dev and its minor number, minor >= CRCDEV_DEVS_COUNT +
+	 * CRCDEV_BASE_MINOR  means no char device was added */
+	struct cdev char_dev;
 	unsigned int minor;
 };
 

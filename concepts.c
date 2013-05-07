@@ -2,6 +2,7 @@
 #include <linux/pci.h>
 #include <linux/spinlock.h>
 #include "concepts.h"
+#include "chrdev.h"
 
 struct crc_device * __must_check crc_device_alloc(void) {
 	struct crc_device *cdev;
@@ -10,6 +11,7 @@ struct crc_device * __must_check crc_device_alloc(void) {
 		INIT_LIST_HEAD(&cdev->free_tasks);
 		INIT_LIST_HEAD(&cdev->waiting_tasks);
 		INIT_LIST_HEAD(&cdev->scheduled_tasks);
+		cdev->minor = CRCDEV_BASE_MINOR + CRCDEV_DEVS_COUNT;
 	}
 	return cdev;
 }

@@ -4,6 +4,8 @@
 #include "errors.h"
 #include "concepts.h"
 #include "interrupts.h"
+#include "chrdev.h"
+#include "sysfs.h"
 
 static struct pci_device_id crc_device_ids[] = {
 	{ PCI_DEVICE(CRCDEV_VENDOR_ID, CRCDEV_DEVICE_ID) },
@@ -103,8 +105,12 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	iowrite32(CRCDEV_INTR_ALL, cdev->bar0 + CRCDEV_INTR_ENABLE);
 	/* DEVICE READY */
 	// FIXME mark as ready (and unmark in crc_remove)
-	// TODO register chrdev
-	// TODO register sysfs
+	/* After registering char device someone can use it */
+	if ((rv = crc_chrdev_add(pdev, cdev)))
+		goto fail;
+	if ((rv = crc_sysfs_add(pdev, cdev)))
+		goto fail;
+	/* Probe scceeded */
 	printk(KERN_INFO "crcdev: probed PCI %x:%x:%x.", pdev->vendor,
 			pdev->device, pdev->devfn);
 	return rv;
@@ -129,6 +135,9 @@ static void crc_remove(struct pci_dev *pdev) {
 		if (cdev->bar0) {
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
+			/* Remove from sysfs and unregister char device */
+			crc_sysfs_del(pdev, cdev);
+			crc_chrdev_del(pdev, cdev);
 			/* There is no running interrupt handler after this */
 			free_irq(pdev->irq, cdev);
 			/* Free DMA memory (this needs irqs) before disabling */
