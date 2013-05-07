@@ -12,6 +12,7 @@ struct crc_device * __must_check crc_device_alloc(void) {
 		INIT_LIST_HEAD(&cdev->waiting_tasks);
 		INIT_LIST_HEAD(&cdev->scheduled_tasks);
 		cdev->minor = CRCDEV_BASE_MINOR + CRCDEV_DEVS_COUNT;
+		kref_init(&cdev->refc);
 	}
 	return cdev;
 }

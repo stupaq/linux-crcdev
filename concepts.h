@@ -4,6 +4,7 @@
 #include <asm/types.h>
 #include <linux/pci.h>
 #include <linux/list.h>
+#include <linux/kref.h>
 #include <linux/cdev.h>
 #include "crcdev.h"
 
@@ -71,6 +72,8 @@ struct crc_device {
 	 * CRCDEV_BASE_MINOR  means no char device was added */
 	struct cdev char_dev;
 	unsigned int minor;
+	/* Reference counting, module is the initial owner of crc_device */
+	struct kref refc;
 };
 
 struct crc_device *crc_device_alloc(void);

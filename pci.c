@@ -101,11 +101,11 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 					CRCDEV_PCI_NAME, cdev)))
 		goto fail;
 	cdev->status |= CRCDEV_STATUS_IRQ;
+	cdev->status |= CRCDEV_STATUS_READY;
+	/* END CRITICAL SECTION - no one new about our device so far */
 	/* Enable ALL interrupts ATOMICALLY, device will run after this and idle
 	 * immediately (there is no pending commands yet) */
 	iowrite32(CRCDEV_INTR_ALL, cdev->bar0 + CRCDEV_INTR_ENABLE);
-	/* DEVICE READY */
-	cdev->status |= CRCDEV_STATUS_READY;
 	/* After registering char device someone can use it */
 	if ((rv = crc_chrdev_add(pdev, cdev)))
 		goto fail;
@@ -128,20 +128,26 @@ fail_enable:
 // FIXME does this handle every possible path in crc_probe?
 // FIXME swicth to kref to handle hot unplug
 static void crc_remove(struct pci_dev *pdev) {
+	unsigned long flags;
 	struct crc_device* cdev = NULL;
 	printk(KERN_INFO "crcdev: removing PCI device %x:%x:%x.", pdev->vendor,
 			pdev->device, pdev->devfn);
 	if ((cdev = pci_get_drvdata(pdev))) {
 		pci_set_drvdata(pdev, NULL);
-		/* DEVICE NOT READY */
+		/* BEGIN CRITICAL SECTION */
+		spin_lock_irqsave(&cdev->dev_lock, flags);
+		/* Mark device as not ready */
 		cdev->status &= ~CRCDEV_STATUS_READY;
+		spin_unlock_irqrestore(&cdev->dev_lock, flags);
+		/* END CRITICAL SECTION */
 		if (cdev->bar0) {
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
 			/* Remove from sysfs and unregister char device */
 			crc_sysfs_del(pdev, cdev);
 			crc_chrdev_del(pdev, cdev);
-			/* There is no running interrupt handler after this */
+			/* There is no running interrupt handler after this,
+			 * ACHTUNG: doing this under dev_lock causes DEADLOCK */
 			if (cdev->status & CRCDEV_STATUS_IRQ)
 				free_irq(pdev->irq, cdev);
 			cdev->status &= ~CRCDEV_STATUS_IRQ;
