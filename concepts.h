@@ -76,10 +76,10 @@ struct crc_device {
 	struct kref refc;			// dev_lock(rw)
 };
 
-struct crc_device *crc_device_alloc(void);
+struct crc_device * __must_check crc_device_alloc(void);
 void crc_device_free(struct crc_device *);
 
-int crc_device_dma_alloc(struct pci_dev *, struct crc_device *);
+int __must_check crc_device_dma_alloc(struct pci_dev *, struct crc_device *);
 void crc_device_dma_free(struct pci_dev *, struct crc_device *);
 
 #endif  /* SESSION_H_ */

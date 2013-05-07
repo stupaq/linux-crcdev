@@ -6,10 +6,8 @@
 #define CRCDEV_PCI_NAME	"crcdev"
 #define CRCDEV_DMA_BITS	32
 
-__must_check int crc_pci_init(void);
+int __must_check crc_pci_init(void);
 
 void crc_pci_exit(void);
-
-int crc_pci_intline(struct pci_dev *);
 
 #endif  /* PCI_H_ */

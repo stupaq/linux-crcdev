@@ -5,8 +5,9 @@
 #include <linux/mutex.h>
 #include <linux/compiler.h>
 #include "errors.h"
-#include "chrdev.h"
 #include "pci.h"
+#include "chrdev.h"
+#include "fileops.h"
 
 static unsigned int crc_chrdev_major = 0;
 static int crc_chrdev_init_success = 0;
@@ -47,7 +48,7 @@ int __must_check crc_chrdev_add(struct pci_dev *pdev, struct crc_device *dev) {
 		bitmap_allocate_region(crc_chrdev_minors, idx, 0);
 	mutex_unlock(&crc_chrdev_minors_lock);
 	if (0 <= idx && idx < CRCDEV_DEVS_COUNT) {
-		cdev_init(&dev->char_dev, NULL); // FIXME
+		cdev_init(&dev->char_dev, &crc_fileops_fops);
 		dev->char_dev.owner = THIS_MODULE;
 		dev->minor = (unsigned int) idx + CRCDEV_BASE_MINOR;
 		if ((rv = cdev_add(&dev->char_dev, crc_chrdev_getdev(dev), 1)))

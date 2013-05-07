@@ -23,7 +23,7 @@ static struct pci_driver crc_pci_driver = {
 	.remove = crc_remove,
 };
 
-int crc_pci_init(void) {
+int __must_check crc_pci_init(void) {
 	printk(KERN_DEBUG "crcdev: registering PCI driver.");
 	return pci_register_driver(&crc_pci_driver);
 }
@@ -31,14 +31,6 @@ int crc_pci_init(void) {
 void crc_pci_exit(void) {
 	printk(KERN_DEBUG "crcdev: unregistering PCI driver.");
 	pci_unregister_driver(&crc_pci_driver);
-}
-
-int __must_check crc_pci_intline(struct pci_dev *pdev) {
-	int rv = 0;
-	u8 line;
-	if ((rv = pci_read_config_byte(pdev, PCI_INTERRUPT_LINE, &line)) < 0)
-		return ERROR(rv);
-	return line;
 }
 
 /* UNSAFE */
