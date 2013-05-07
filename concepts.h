@@ -52,7 +52,7 @@ crc_command_set_ctx(struct crc_command *cmd, u8 ctx) {
 #define	CRCDEV_STATUS_READY 0x00000002
 
 struct crc_device {
-	unsigned long status;
+	unsigned long status;			// dev_lock(rw)
 	/* Locks */
 	spinlock_t dev_lock;
 	/* Tasks for this device */
@@ -60,20 +60,20 @@ struct crc_device {
 	struct list_head waiting_tasks;
 	struct list_head scheduled_tasks;
 	/* BAR0 address */
-	void __iomem *bar0;
+	void __iomem *bar0;			// dev_lock(rw)
 	/* Number of entries in cmd_block */
-	size_t cmd_block_len;
+	size_t cmd_block_len;			// init
 	/* Address of first cmd_block entry in dev address space */
-	dma_addr_t cmd_block_dma;
-	struct crc_command *cmd_block;
+	dma_addr_t cmd_block_dma;		// init
+	struct crc_command *cmd_block;		// init
 	/* Sysfs device */
-	struct device *sysfs_dev;
+	struct device *sysfs_dev;		// init
 	/* Char dev and its minor number, minor >= CRCDEV_DEVS_COUNT +
 	 * CRCDEV_BASE_MINOR  means no char device was added */
-	struct cdev char_dev;
-	unsigned int minor;
+	struct cdev char_dev;			// init
+	unsigned int minor;			// init
 	/* Reference counting, module is the initial owner of crc_device */
-	struct kref refc;
+	struct kref refc;			// dev_lock(rw)
 };
 
 struct crc_device *crc_device_alloc(void);
