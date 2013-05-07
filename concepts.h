@@ -60,6 +60,10 @@ struct crc_device {
 	/* Address of first cmd_block entry in dev address space */
 	dma_addr_t cmd_block_dma;
 	struct crc_command *cmd_block;
+	/* Sysfs device */
+	struct device *sysfs_dev;
+	/* Device minor number */
+	unsigned int minor;
 };
 
 struct crc_device *crc_device_alloc(void);

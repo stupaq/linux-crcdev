@@ -103,6 +103,8 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	iowrite32(CRCDEV_INTR_ALL, cdev->bar0 + CRCDEV_INTR_ENABLE);
 	/* DEVICE READY */
 	// FIXME mark as ready (and unmark in crc_remove)
+	// TODO register chrdev
+	// TODO register sysfs
 	printk(KERN_INFO "crcdev: probed PCI %x:%x:%x.", pdev->vendor,
 			pdev->device, pdev->devfn);
 	return rv;
@@ -117,21 +119,17 @@ fail_enable:
 }
 
 // FIXME does this handle every possible path in crc_probe?
+// FIXME swicth to kref to handle hot unplug
 static void crc_remove(struct pci_dev *pdev) {
-	unsigned long flags;
 	struct crc_device* cdev = NULL;
 	printk(KERN_INFO "crcdev: removing PCI device %x:%x:%x.", pdev->vendor,
 			pdev->device, pdev->devfn);
 	if ((cdev = pci_get_drvdata(pdev))) {
 		pci_set_drvdata(pdev, NULL);
-		/* BEGIN CRITICAL SECTION */
-		spin_lock_irqsave(&cdev->dev_lock, flags);
-		spin_unlock_irqrestore(&cdev->dev_lock, flags);
-		/* END CRITICAL SECTION */
-		// FIXME running interrupt handler here?
 		if (cdev->bar0) {
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
+			/* There is no running interrupt handler after this */
 			free_irq(pdev->irq, cdev);
 			/* Free DMA memory (this needs irqs) before disabling */
 			crc_device_dma_free(pdev, cdev);
