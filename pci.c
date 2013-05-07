@@ -41,6 +41,7 @@ int __must_check crc_pci_intline(struct pci_dev *pdev) {
 	return line;
 }
 
+/* UNSAFE */
 static void crc_reset_device(struct crc_device *cdev) {
 	void __iomem* bar0 = cdev->bar0;
 	/* Disable FETCH_DATA and FETCH_CMD */
@@ -134,15 +135,15 @@ static void crc_remove(struct pci_dev *pdev) {
 			pdev->device, pdev->devfn);
 	if ((cdev = pci_get_drvdata(pdev))) {
 		pci_set_drvdata(pdev, NULL);
-		/* BEGIN CRITICAL SECTION */
-		spin_lock_irqsave(&cdev->dev_lock, flags);
-		/* Mark device as not ready */
-		cdev->status &= ~CRCDEV_STATUS_READY;
-		spin_unlock_irqrestore(&cdev->dev_lock, flags);
-		/* END CRITICAL SECTION */
 		if (cdev->bar0) {
+			/* BEGIN CRITICAL SECTION */
+			spin_lock_irqsave(&cdev->dev_lock, flags);
+			/* Mark device as not ready */
+			cdev->status &= ~CRCDEV_STATUS_READY;
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
+			spin_unlock_irqrestore(&cdev->dev_lock, flags);
+			/* END CRITICAL SECTION */
 			/* Remove from sysfs and unregister char device */
 			crc_sysfs_del(pdev, cdev);
 			crc_chrdev_del(pdev, cdev);

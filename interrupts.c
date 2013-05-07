@@ -21,7 +21,6 @@ static void crc_irq_handler_cmd_idle(struct crc_device *cdev) {
 	crc_irq_cmd_idle(cdev, 0);
 }
 
-// FIXME check some device-ready flag, this is asynchronous from device remove!
 irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
 	irqreturn_t rv = IRQ_NONE;
 	u32 intr;
@@ -29,6 +28,8 @@ irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
 	struct crc_device *cdev = (struct crc_device *) dev_id;
 	/* BEGIN CRITICAL SECTION */
 	spin_lock_irqsave(&cdev->dev_lock, flags);
+	/* Note that anything special for us can happen only after free_irq(),
+	 * but all interrupt handlers must exit before then */
 	/* Check if it was our device and which interrupt fired */
 	intr = ioread32(cdev->bar0 + CRCDEV_INTR);
 	intr &= ioread32(cdev->bar0 + CRCDEV_INTR_ENABLE);
