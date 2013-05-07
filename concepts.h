@@ -47,7 +47,11 @@ crc_command_set_ctx(struct crc_command *cmd, u8 ctx) {
 		| (ctx & ~CRCDEV_CMD_COUNT_MASK);
 }
 
+#define	CRCDEV_STATUS_IRQ   0x00000001
+#define	CRCDEV_STATUS_READY 0x00000002
+
 struct crc_device {
+	unsigned long status;
 	/* Locks */
 	spinlock_t dev_lock;
 	/* Tasks for this device */

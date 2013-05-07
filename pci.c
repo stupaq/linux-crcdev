@@ -82,8 +82,8 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	pci_set_master(pdev);
 	if ((rv = pci_set_dma_mask(pdev, DMA_BIT_MASK(CRCDEV_DMA_BITS))))
 		goto fail;
-	/* FIXME this is a problem with 32 bits */
-	if ((rv = pci_set_consistent_dma_mask(pdev, BIT_MASK(CRCDEV_DMA_BITS))))
+	if ((rv = pci_set_consistent_dma_mask(pdev,
+					DMA_BIT_MASK(CRCDEV_DMA_BITS))))
 		goto fail;
 	if ((rv = crc_device_dma_alloc(pdev, cdev)))
 		goto fail;
@@ -100,11 +100,12 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	if ((rv = request_irq(pdev->irq, crc_irq_dispatcher, IRQF_SHARED,
 					CRCDEV_PCI_NAME, cdev)))
 		goto fail;
+	cdev->status |= CRCDEV_STATUS_IRQ;
 	/* Enable ALL interrupts ATOMICALLY, device will run after this and idle
 	 * immediately (there is no pending commands yet) */
 	iowrite32(CRCDEV_INTR_ALL, cdev->bar0 + CRCDEV_INTR_ENABLE);
 	/* DEVICE READY */
-	// FIXME mark as ready (and unmark in crc_remove)
+	cdev->status |= CRCDEV_STATUS_READY;
 	/* After registering char device someone can use it */
 	if ((rv = crc_chrdev_add(pdev, cdev)))
 		goto fail;
@@ -132,6 +133,8 @@ static void crc_remove(struct pci_dev *pdev) {
 			pdev->device, pdev->devfn);
 	if ((cdev = pci_get_drvdata(pdev))) {
 		pci_set_drvdata(pdev, NULL);
+		/* DEVICE NOT READY */
+		cdev->status &= ~CRCDEV_STATUS_READY;
 		if (cdev->bar0) {
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
@@ -139,12 +142,15 @@ static void crc_remove(struct pci_dev *pdev) {
 			crc_sysfs_del(pdev, cdev);
 			crc_chrdev_del(pdev, cdev);
 			/* There is no running interrupt handler after this */
-			free_irq(pdev->irq, cdev);
+			if (cdev->status & CRCDEV_STATUS_IRQ)
+				free_irq(pdev->irq, cdev);
+			cdev->status &= ~CRCDEV_STATUS_IRQ;
 			/* Free DMA memory (this needs irqs) before disabling */
 			crc_device_dma_free(pdev, cdev);
 			pci_clear_master(pdev);
 			/* Unmap memory regions */
 			pci_iounmap(pdev, cdev->bar0);
+			cdev->bar0 = NULL;
 		}
 		crc_device_free(cdev);
 		cdev = NULL;

@@ -4,7 +4,7 @@
 #include <linux/pci.h>
 
 #define CRCDEV_PCI_NAME	"crcdev"
-#define CRCDEV_DMA_BITS	24
+#define CRCDEV_DMA_BITS	32
 
 __must_check int crc_pci_init(void);
 

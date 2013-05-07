@@ -54,7 +54,8 @@ int __must_check crc_chrdev_add(struct pci_dev *pdev, struct crc_device *dev) {
 			goto fail_add;
 	} else {
 		dev->minor = CRCDEV_BASE_MINOR + CRCDEV_DEVS_COUNT;
-		rv = -ENOMEM; // FIXME what to do here?
+		/* Had problem here, this works fine for me */
+		rv = -ENOMEM;
 	}
 	return rv;
 fail_add:
