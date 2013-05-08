@@ -1,6 +1,7 @@
 #include <linux/kernel.h>
 #include <linux/pci.h>
 #include <linux/spinlock.h>
+#include <linux/compiler.h>
 #include "concepts.h"
 #include "chrdev.h"
 
@@ -43,32 +44,42 @@ fail_minor:
 	return NULL;
 }
 
-static void crc_device_free(struct crc_device *cdev) {
+/* UNSAFE */
+static void crc_device_free_kref(struct kref *ref) {
+	struct crc_device *cdev = container_of(ref, struct crc_device, refc);
 	int idx = cdev->minor - CRCDEV_BASE_MINOR;
 	/* Relese minor after removing device */
-	mutex_lock(&crc_device_minors_lock);
 	bitmap_release_region(crc_device_minors, idx, 0);
 	crc_device_minors_mapping[idx] = NULL;
-	mutex_unlock(&crc_device_minors_lock);
 	/* Free mem */
 	kfree(cdev);
 }
 
-void crc_device_free_kref(struct kref *ref) {
-	crc_device_free(container_of(ref, struct crc_device, refc));
-}
-
 /* Note that the initial reference to crc_device is held by pci module,
  * these functions are only used by open/release file operations */
-struct crc_device * __must_check crc_device_get(int minor) {
-	// FIXME
-	return NULL;
+struct crc_device * __must_check crc_device_get(unsigned int minor) {
+	int idx = minor - CRCDEV_BASE_MINOR;
+	struct crc_device *cdev;
+	mutex_lock(&crc_device_minors_lock);
+	if ((cdev = crc_device_minors_mapping[idx])) {
+		kref_get(&cdev->refc);
+	}
+	mutex_unlock(&crc_device_minors_lock);
+	return cdev;
 }
 
-void crc_device_put(int minor) {
+void crc_device_put(struct crc_device *cdev) {
+	int idx;
+	if (!cdev)
+		return;
+	idx = cdev->minor - CRCDEV_BASE_MINOR;
+	mutex_lock(&crc_device_minors_lock);
+	kref_put(&cdev->refc, crc_device_free_kref);
 	// FIXME
+	mutex_unlock(&crc_device_minors_lock);
 }
 
+/* UNSAFE, SLEEPS */
 int __must_check crc_device_dma_alloc(struct pci_dev *pdev,
 		struct crc_device *cdev) {
 	int i;
@@ -98,6 +109,7 @@ fail:
 	return -ENOMEM;
 }
 
+/* UNSAFE, SLEEPS */
 void crc_device_dma_free(struct pci_dev *pdev, struct crc_device *cdev) {
 	struct crc_task *task, *tmp;
 	if (cdev->cmd_block) {

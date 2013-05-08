@@ -14,6 +14,7 @@ WATCH OUT
 - once you register something it is likely that someone starts using it
 - clear interrupts before registering handler
 - initialize ALL device registers
+- all destroy functions should deal with NULLs
 
 QUESTIONS
 ---------

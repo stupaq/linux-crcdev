@@ -66,9 +66,9 @@ struct crc_device {
 	/* Locks */
 	spinlock_t dev_lock;
 	/* Tasks for this device */
-	struct list_head free_tasks;
-	struct list_head waiting_tasks;
-	struct list_head scheduled_tasks;
+	struct list_head free_tasks;		// dev_lock(rw)
+	struct list_head waiting_tasks;		// dev_lock(rw)
+	struct list_head scheduled_tasks;	// dev_lock(rw)
 	/* BAR0 address */
 	void __iomem *bar0;			// dev_lock(rw)
 	/* Number of entries in cmd_block */
@@ -82,14 +82,13 @@ struct crc_device {
 	struct cdev char_dev;			// init
 	unsigned int minor;			// init
 	/* Reference counting, module is the initial owner of crc_device */
-	struct kref refc;			// no direct access
+	struct kref refc;			// private
 };
 
 struct crc_device * __must_check crc_device_alloc(void);
-void crc_device_free_kref(struct kref *);
 
-struct crc_device * __must_check crc_device_get(int);
-void crc_device_put(int);
+struct crc_device * __must_check crc_device_get(unsigned int);
+void crc_device_put(struct crc_device *);
 
 int __must_check crc_device_dma_alloc(struct pci_dev *, struct crc_device *);
 void crc_device_dma_free(struct pci_dev *, struct crc_device *);

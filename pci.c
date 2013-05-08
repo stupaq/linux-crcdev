@@ -152,7 +152,7 @@ static void crc_remove(struct pci_dev *pdev) {
 			pci_iounmap(pdev, cdev->bar0);
 			cdev->bar0 = NULL;
 		}
-		kref_put(&cdev->refc, crc_device_free_kref);
+		crc_device_put(cdev);
 		cdev = NULL;
 	}
 	/* Reordering commented in kernel's Documentation/PCI/pci.txt */

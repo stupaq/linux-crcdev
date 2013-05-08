@@ -6,19 +6,24 @@
 #include "concepts.h"
 
 static int crc_fileops_open(struct inode *inode, struct file *filp) {
-	struct crc_device *cdev = crc_device_get(iminor(inode));
+	unsigned minor = iminor(inode);
+	struct crc_device *cdev = crc_device_get(minor);
 	if (cdev != container_of(inode->i_cdev, struct crc_device, char_dev))
 		goto fail_dev;
 	// TODO
 	filp->private_data = NULL;
 	return 0;
 fail_dev:
+	crc_device_put(cdev);
 	return -ENODEV;
 }
 
 static int crc_fileops_release(struct inode *inode, struct file *filp) {
+	unsigned minor = iminor(inode);
+	struct crc_device *cdev = crc_device_get(minor);
 	struct crc_session *sess = filp->private_data;
 	// TODO
+	crc_device_put(cdev);
 	return 0;
 }
 
