@@ -57,12 +57,12 @@ crc_command_set_ctx(struct crc_command *cmd, u8 ctx) {
 }
 
 /* crc_device */
-#define	CRCDEV_STATUS_IRQ	0x00000001
-#define	CRCDEV_STATUS_READY	0x00000002
-#define	CRCDEV_STATUS_CHRDEV	0x00000004
+#define	CRCDEV_STATUS_IRQ	1
+#define	CRCDEV_STATUS_READY	2
+#define	CRCDEV_STATUS_CHRDEV	4
 
 struct crc_device {
-	unsigned long status;			// dev_lock(rw)
+	volatile unsigned long status;		// atomic bitops
 	/* Locks */
 	spinlock_t dev_lock;
 	/* Tasks for this device */

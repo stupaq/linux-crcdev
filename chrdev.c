@@ -42,15 +42,15 @@ int __must_check crc_chrdev_add(struct pci_dev *pdev, struct crc_device *dev) {
 	dev->char_dev.owner = THIS_MODULE;
 	if ((rv = cdev_add(&dev->char_dev, crc_chrdev_getdev(dev), 1)))
 		goto fail_add;
-	dev->status |= CRCDEV_STATUS_CHRDEV;
+	set_bit(CRCDEV_STATUS_CHRDEV, &dev->status);
 	return rv;
 fail_add:
 	return ERROR(rv);
 }
 
 void crc_chrdev_del(struct pci_dev *pdev, struct crc_device *dev) {
-	if (dev->status & CRCDEV_STATUS_CHRDEV) {
+	if (test_bit(CRCDEV_STATUS_CHRDEV, &dev->status)) {
 		cdev_del(&dev->char_dev);
-		dev->status &= ~CRCDEV_STATUS_CHRDEV;
+		clear_bit(CRCDEV_STATUS_CHRDEV, &dev->status);
 	}
 }

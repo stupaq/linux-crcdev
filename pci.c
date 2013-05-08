@@ -94,9 +94,9 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	if ((rv = request_irq(pdev->irq, crc_irq_dispatcher, IRQF_SHARED,
 					CRCDEV_PCI_NAME, cdev)))
 		goto fail;
-	cdev->status |= CRCDEV_STATUS_IRQ;
-	cdev->status |= CRCDEV_STATUS_READY;
-	/* END CRITICAL SECTION - no one alive new about our device so far */
+	set_bit(CRCDEV_STATUS_IRQ, &cdev->status);
+	set_bit(CRCDEV_STATUS_READY, &cdev->status);
+	/* END CRITICAL (cdev->dev_lock) - no one alive new about our device */
 	/* Enable ALL interrupts ATOMICALLY, device will run after this and idle
 	 * immediately (there is no pending commands yet) */
 	iowrite32(CRCDEV_INTR_ALL, cdev->bar0 + CRCDEV_INTR_ENABLE);
@@ -132,7 +132,7 @@ static void crc_remove(struct pci_dev *pdev) {
 			/* BEGIN CRITICAL SECTION */
 			spin_lock_irqsave(&cdev->dev_lock, flags);
 			/* Mark device as not ready */
-			cdev->status &= ~CRCDEV_STATUS_READY;
+			clear_bit(CRCDEV_STATUS_READY, &cdev->status);
 			/* This stops DMA activity and disables interrupts */
 			crc_reset_device(cdev);
 			spin_unlock_irqrestore(&cdev->dev_lock, flags);
@@ -142,9 +142,9 @@ static void crc_remove(struct pci_dev *pdev) {
 			crc_chrdev_del(pdev, cdev);
 			/* There is no running interrupt handler after this,
 			 * ACHTUNG: doing this under dev_lock causes DEADLOCK */
-			if (cdev->status & CRCDEV_STATUS_IRQ)
+			if (test_bit(CRCDEV_STATUS_IRQ, &cdev->status))
 				free_irq(pdev->irq, cdev);
-			cdev->status &= ~CRCDEV_STATUS_IRQ;
+			clear_bit(CRCDEV_STATUS_IRQ, &cdev->status);
 			/* Free DMA memory (this needs irqs) before disabling */
 			crc_device_dma_free(pdev, cdev);
 			pci_clear_master(pdev);

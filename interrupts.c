@@ -30,7 +30,7 @@ irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
 	struct crc_device *cdev = (struct crc_device *) dev_id;
 	/* BEGIN CRITICAL SECTION */
 	spin_lock_irqsave(&cdev->dev_lock, flags);
-	if (cdev->status & CRCDEV_STATUS_READY) {
+	if (test_bit(CRCDEV_STATUS_READY, &cdev->status)) {
 		/* Check if it was our device and which interrupt fired */
 		intr = ioread32(cdev->bar0 + CRCDEV_INTR);
 		intr &= ioread32(cdev->bar0 + CRCDEV_INTR_ENABLE);

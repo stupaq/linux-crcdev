@@ -70,12 +70,10 @@ struct crc_device * __must_check crc_device_get(unsigned int minor) {
 
 void crc_device_put(struct crc_device *cdev) {
 	int idx;
-	if (!cdev)
-		return;
+	if (!cdev) return;
 	idx = cdev->minor - CRCDEV_BASE_MINOR;
 	mutex_lock(&crc_device_minors_lock);
 	kref_put(&cdev->refc, crc_device_free_kref);
-	// FIXME
 	mutex_unlock(&crc_device_minors_lock);
 }
 
