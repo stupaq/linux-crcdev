@@ -75,7 +75,7 @@ struct crc_device {
 	size_t cmd_block_len;			// init
 	/* Address of first cmd_block entry in dev address space */
 	dma_addr_t cmd_block_dma;		// init
-	struct crc_command *cmd_block;		// init
+	struct crc_command *cmd_block;		// dev_lock(rw)
 	/* Sysfs device */
 	struct device *sysfs_dev;		// init
 	/* Char dev and its minor number */

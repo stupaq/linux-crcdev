@@ -107,15 +107,26 @@ fail:
 	return -ENOMEM;
 }
 
-/* UNSAFE, SLEEPS */
+/* SLEEPS */
 void crc_device_dma_free(struct pci_dev *pdev, struct crc_device *cdev) {
+	unsigned long flags;
 	struct crc_task *task, *tmp;
+	struct list_head tmp_list;
 	if (cdev->cmd_block) {
 		dma_free_coherent(&pdev->dev, sizeof(*cdev->cmd_block) *
 				cdev->cmd_block_len, cdev->cmd_block,
 				cdev->cmd_block_dma);
+		cdev->cmd_block = NULL;
 	}
-	list_for_each_entry_safe(task, tmp, &cdev->free_tasks, list) {
+	INIT_LIST_HEAD(&tmp_list);
+	/* BEGIN CRITICAL SECTION */
+	spin_lock_irqsave(&cdev->dev_lock, flags);
+	list_splice_init(&cdev->free_tasks, &tmp_list);
+	list_splice_init(&cdev->waiting_tasks, &tmp_list);
+	list_splice_init(&cdev->scheduled_tasks, &tmp_list);
+	spin_unlock_irqrestore(&cdev->dev_lock, flags);
+	/* END CRITICAL SECTION */
+	list_for_each_entry_safe(task, tmp, &tmp_list, list) {
 		dma_free_coherent(&pdev->dev, task->data_sz, task->data,
 				task->data_dma);
 		kfree(task);
