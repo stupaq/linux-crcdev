@@ -4,9 +4,6 @@
 #include <linux/device.h>
 #include "concepts.h"
 
-#define	CRCDEV_DEVS_COUNT 255
-#define	CRCDEV_BASE_MINOR 0
-
 int __must_check crc_chrdev_init(void);
 
 void crc_chrdev_exit(void);

@@ -6,11 +6,14 @@
 #include "concepts.h"
 
 static int crc_fileops_open(struct inode *inode, struct file *filp) {
-	struct crc_device *cdev = container_of(inode->i_cdev, struct crc_device,
-			char_dev);
+	struct crc_device *cdev = crc_device_get(iminor(inode));
+	if (cdev != container_of(inode->i_cdev, struct crc_device, char_dev))
+		goto fail_dev;
 	// TODO
 	filp->private_data = NULL;
 	return 0;
+fail_dev:
+	return -ENODEV;
 }
 
 static int crc_fileops_release(struct inode *inode, struct file *filp) {
@@ -26,7 +29,7 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 	return -EFAULT;
 }
 
-/* ioctl(CRCDEV_IOCTL_SET_PARAMS) affects crc computation in undefined way if
+/* ioctl(CRCDEV_IOCTL_SET_PARAMS) affects crc computation in an undefined way if
  * called after write but before ioctl(CRCDEV_IOCTL_GET_RESULT) */
 static int crc_ioctl_set_params(struct crc_session *sess, void __user * argp) {
 	int rv = 0;

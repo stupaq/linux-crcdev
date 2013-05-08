@@ -11,7 +11,14 @@
 #define	CRCDEV_CMDS_COUNT	32
 #define	CRCDEV_BUFFERS_COUNT	32
 #define	CRCDEV_BUFFER_SIZE	4096
+#define	CRCDEV_DEVS_COUNT	255
+#define	CRCDEV_BASE_MINOR	0
 
+/* Common */
+int __must_check crc_concepts_init(void);
+void crc_concepts_exit(void);
+
+/* crc_session */
 struct crc_session {
 	size_t waiting_count;
 	/* context: */
@@ -20,6 +27,7 @@ struct crc_session {
 	u32 sum;
 };
 
+/* crc_task */
 struct crc_task {
 	/* One task can be in one of the following: scheduled, waiting, free */
 	struct list_head list;
@@ -48,8 +56,10 @@ crc_command_set_ctx(struct crc_command *cmd, u8 ctx) {
 		| (ctx & ~CRCDEV_CMD_COUNT_MASK);
 }
 
-#define	CRCDEV_STATUS_IRQ   0x00000001
-#define	CRCDEV_STATUS_READY 0x00000002
+/* crc_device */
+#define	CRCDEV_STATUS_IRQ	0x00000001
+#define	CRCDEV_STATUS_READY	0x00000002
+#define	CRCDEV_STATUS_CHRDEV	0x00000004
 
 struct crc_device {
 	unsigned long status;			// dev_lock(rw)
@@ -68,16 +78,18 @@ struct crc_device {
 	struct crc_command *cmd_block;		// init
 	/* Sysfs device */
 	struct device *sysfs_dev;		// init
-	/* Char dev and its minor number, minor >= CRCDEV_DEVS_COUNT +
-	 * CRCDEV_BASE_MINOR  means no char device was added */
+	/* Char dev and its minor number */
 	struct cdev char_dev;			// init
 	unsigned int minor;			// init
 	/* Reference counting, module is the initial owner of crc_device */
-	struct kref refc;			// dev_lock(rw)
+	struct kref refc;			// no direct access
 };
 
 struct crc_device * __must_check crc_device_alloc(void);
-void crc_device_free(struct crc_device *);
+void crc_device_free_kref(struct kref *);
+
+struct crc_device * __must_check crc_device_get(int);
+void crc_device_put(int);
 
 int __must_check crc_device_dma_alloc(struct pci_dev *, struct crc_device *);
 void crc_device_dma_free(struct pci_dev *, struct crc_device *);

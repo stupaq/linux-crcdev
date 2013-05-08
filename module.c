@@ -16,12 +16,15 @@ static void cleanup_crcdev(void)
 	crc_pci_exit();
 	crc_sysfs_exit();
 	crc_chrdev_exit();
+	crc_concepts_exit();
 }
 
 static int __init init_crcdev(void)
 {
 	int rv = 0;
 	printk(KERN_DEBUG "crcdev: loading crcdev module.");
+	if ((rv = crc_concepts_init()))
+		goto fail;
 	if ((rv = crc_chrdev_init()))
 		goto fail;
 	if ((rv = crc_sysfs_init()))

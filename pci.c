@@ -90,12 +90,13 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 		printk(KERN_INFO "crcdev: device cannot generate interrupts");
 		goto fail;
 	}
+	/* Interrupt handlers share crc_device reference with pci module */
 	if ((rv = request_irq(pdev->irq, crc_irq_dispatcher, IRQF_SHARED,
 					CRCDEV_PCI_NAME, cdev)))
 		goto fail;
 	cdev->status |= CRCDEV_STATUS_IRQ;
 	cdev->status |= CRCDEV_STATUS_READY;
-	/* END CRITICAL SECTION - no one new about our device so far */
+	/* END CRITICAL SECTION - no one alive new about our device so far */
 	/* Enable ALL interrupts ATOMICALLY, device will run after this and idle
 	 * immediately (there is no pending commands yet) */
 	iowrite32(CRCDEV_INTR_ALL, cdev->bar0 + CRCDEV_INTR_ENABLE);
@@ -151,7 +152,7 @@ static void crc_remove(struct pci_dev *pdev) {
 			pci_iounmap(pdev, cdev->bar0);
 			cdev->bar0 = NULL;
 		}
-		crc_device_free(cdev);
+		kref_put(&cdev->refc, crc_device_free_kref);
 		cdev = NULL;
 	}
 	/* Reordering commented in kernel's Documentation/PCI/pci.txt */
