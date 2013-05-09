@@ -1,10 +1,15 @@
 #ifndef SESSION_H_
 #define SESSION_H_
 
-#include <asm/types.h>
-#include <linux/pci.h>
+#include <linux/kernel.h>
+#include <linux/compiler.h>
 #include <linux/list.h>
 #include <linux/kref.h>
+#include <linux/completion.h>
+#include <linux/rwsem.h>
+#include <linux/semaphore.h>
+#include <linux/spinlock.h>
+#include <linux/pci.h>
 #include <linux/cdev.h>
 #include "crcdev.h"
 
@@ -14,18 +19,30 @@
 #define	CRCDEV_DEVS_COUNT	255
 #define	CRCDEV_BASE_MINOR	0
 
+struct crc_device;
+
 /* Common */
 int __must_check crc_concepts_init(void);
 void crc_concepts_exit(void);
 
 /* crc_session */
 struct crc_session {
-	size_t waiting_count;
-	/* context: */
-	size_t scheduled_count;
-	u32 poly;
-	u32 sum;
+	struct crc_device *crc_dev;
+	/* Locks */
+	spinlock_t sess_lock;
+	struct mutex call_lock;
+	/* Complete iff waiting_count + scheduled_count == 0 */
+	struct completion ioctl_comp;		// sess_lock(lu)
+	/* Task stats */
+	size_t waiting_count;			// sess_lock(rw)
+	size_t scheduled_count;			// sess_lock(rw)
+	/* Context */
+	u32 poly;				// sess_lock(rw)
+	u32 sum;				// sess_lock(rw)
 };
+
+struct crc_session * __must_check crc_session_alloc(struct crc_device *);
+void crc_session_free(struct crc_session *);
 
 /* crc_task */
 struct crc_task {
@@ -60,11 +77,14 @@ crc_command_set_ctx(struct crc_command *cmd, u8 ctx) {
 #define	CRCDEV_STATUS_IRQ	1
 #define	CRCDEV_STATUS_READY	2
 #define	CRCDEV_STATUS_CHRDEV	4
+#define	CRCDEV_STATUS_REMOVED	8
 
 struct crc_device {
 	volatile unsigned long status;		// atomic bitops
 	/* Locks */
 	spinlock_t dev_lock;
+	struct rw_semaphore remove_lock; /* no reader will ever wait */
+	struct semaphore free_tasks_wait;
 	/* Tasks for this device */
 	struct list_head free_tasks;		// dev_lock(rw)
 	struct list_head waiting_tasks;		// dev_lock(rw)

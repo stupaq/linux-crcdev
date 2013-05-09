@@ -6,6 +6,7 @@
 #include "interrupts.h"
 #include "chrdev.h"
 #include "sysfs.h"
+#include "monitors.h"
 
 static struct pci_device_id crc_device_ids[] = {
 	{ PCI_DEVICE(CRCDEV_VENDOR_ID, CRCDEV_DEVICE_ID) },
@@ -121,40 +122,44 @@ fail_enable:
 
 // FIXME does this handle every possible path in crc_probe?
 // FIXME swicth to kref to handle hot unplug
+// FIXME removing must be mutually exclusive with ALL calls
+// FIXME removing must wakeup ALL waiting calls before entering remove lock
 static void crc_remove(struct pci_dev *pdev) {
 	unsigned long flags;
 	struct crc_device* cdev = NULL;
 	printk(KERN_INFO "crcdev: removing PCI device %x:%x:%x.", pdev->vendor,
 			pdev->device, pdev->devfn);
-	if ((cdev = pci_get_drvdata(pdev))) {
-		pci_set_drvdata(pdev, NULL);
-		if (cdev->bar0) {
-			/* BEGIN CRITICAL SECTION */
-			spin_lock_irqsave(&cdev->dev_lock, flags);
-			/* Mark device as not ready */
-			clear_bit(CRCDEV_STATUS_READY, &cdev->status);
-			/* This stops DMA activity and disables interrupts */
-			crc_reset_device(cdev);
-			spin_unlock_irqrestore(&cdev->dev_lock, flags);
-			/* END CRITICAL SECTION */
-			/* Remove from sysfs and unregister char device */
-			crc_sysfs_del(pdev, cdev);
-			crc_chrdev_del(pdev, cdev);
-			/* There is no running interrupt handler after this,
-			 * ACHTUNG: doing this under dev_lock causes DEADLOCK */
-			if (test_bit(CRCDEV_STATUS_IRQ, &cdev->status))
-				free_irq(pdev->irq, cdev);
-			clear_bit(CRCDEV_STATUS_IRQ, &cdev->status);
-			/* Free DMA memory (this needs irqs) before disabling */
-			crc_device_dma_free(pdev, cdev);
-			pci_clear_master(pdev);
-			/* Unmap memory regions */
-			pci_iounmap(pdev, cdev->bar0);
-			cdev->bar0 = NULL;
-		}
-		crc_device_put(cdev);
-		cdev = NULL;
-	}
+	if (!(cdev = pci_get_drvdata(pdev)))
+		goto pci_finalize_remove;
+	pci_set_drvdata(pdev, NULL);
+	if (!cdev->bar0)
+		goto pci_finalize_remove;
+	/* START (remove) */
+	crc_device_remove_start(cdev);
+	/* BEGIN CRITICAL (cdev->dev_lock) */
+	spin_lock_irqsave(&cdev->dev_lock, flags);
+	/* New interrupts will start to abort from now */
+	clear_bit(CRCDEV_STATUS_READY, &cdev->status);
+	/* This stops DMA activity and disables interrupts */
+	crc_reset_device(cdev);
+	spin_unlock_irqrestore(&cdev->dev_lock, flags);
+	/* END CRITICAL (cdev->dev_lock) */
+	/* Remove from sysfs and unregister char device */
+	crc_sysfs_del(pdev, cdev);
+	crc_chrdev_del(pdev, cdev);
+	/* There is no running interrupt handler after this,
+	 * ACHTUNG: doing this under dev_lock causes DEADLOCK */
+	if (test_bit(CRCDEV_STATUS_IRQ, &cdev->status))
+		free_irq(pdev->irq, cdev);
+	clear_bit(CRCDEV_STATUS_IRQ, &cdev->status);
+	/* Free DMA memory (this needs irqs), we also need all
+	 * tasks to reside in of the queues */
+	crc_device_dma_free(pdev, cdev);
+	pci_clear_master(pdev);
+	/* Unmap memory regions */
+	pci_iounmap(pdev, cdev->bar0); cdev->bar0 = NULL;
+	crc_device_put(cdev); cdev = NULL;
+pci_finalize_remove:
 	/* Reordering commented in kernel's Documentation/PCI/pci.txt */
 	pci_disable_device(pdev);
 	pci_release_regions(pdev);

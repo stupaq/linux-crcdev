@@ -2,20 +2,20 @@
 #include "concepts.h"
 #include "crcdev.h"
 
-/* CRITICAL SECTION */
+/* CRITICAL (cdev->dev_lock) */
 static void crc_irq_handler_fetch_data(struct crc_device *cdev) {
 	/* Handler must ACK this interrupt by itself */
 	// FIXME
 	crc_irq_fetch_data_ack(cdev);
 }
 
-/* CRITICAL SECTION */
+/* CRITICAL (cdev->dev_lock) */
 static void crc_irq_handler_cmd_nonfull(struct crc_device *cdev) {
 	// FIXME
 	crc_irq_cmd_nonfull(cdev, 0);
 }
 
-/* CRITICAL SECTION */
+/* CRITICAL (cdev->dev_lock) */
 static void crc_irq_handler_cmd_idle(struct crc_device *cdev) {
 	// FIXME
 	crc_irq_cmd_idle(cdev, 0);
@@ -28,7 +28,7 @@ irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
 	/* Interrupt handlers share crc_device reference with pci module, but
 	 * this reference can only be destroyed after free_irq() */
 	struct crc_device *cdev = (struct crc_device *) dev_id;
-	/* BEGIN CRITICAL SECTION */
+	/* BEGIN CRITICAL (cdev->dev_lock) */
 	spin_lock_irqsave(&cdev->dev_lock, flags);
 	if (test_bit(CRCDEV_STATUS_READY, &cdev->status)) {
 		/* Check if it was our device and which interrupt fired */
@@ -60,6 +60,6 @@ irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
 	 * are already disabled, this interrupt won't be raised again if it came
 	 * from our device */
 	spin_unlock_irqrestore(&cdev->dev_lock, flags);
-	/* END CRITICAL SECTION */
+	/* END CRITICAL (cdev->dev_lock) */
 	return rv;
 }
