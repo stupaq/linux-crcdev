@@ -56,6 +56,11 @@ struct crc_task {
 	u8 *data;
 };
 
+static __always_inline
+void crc_task_attach(struct crc_session *sess, struct crc_task *task) {
+	task->session = sess;
+};
+
 struct crc_command {
 	u32 __bitwise addr;
 	u32 __bitwise count_ctx;

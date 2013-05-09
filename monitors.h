@@ -79,6 +79,24 @@ void crc_session_free_task(struct crc_session *sess) {
 }
 
 static __always_inline
+void crc_session_tasks_done(struct crc_session *sess) {
+	unsigned long flags;
+	spin_lock_irqsave(&sess->sess_lock, flags);
+	complete_all(&sess->ioctl_comp);
+	spin_unlock_irqrestore(&sess->sess_lock, flags);
+}
+
+/* unsafe, must be called when no one waits for completion */
+static __always_inline
+void crc_session_tasks_new(struct crc_session *sess) {
+	unsigned long flags;
+	spin_lock_irqsave(&sess->sess_lock, flags);
+	INIT_COMPLETION(sess->ioctl_comp);
+	spin_unlock_irqrestore(&sess->sess_lock, flags);
+}
+
+// TODO unused
+static __always_inline
 int crc_device_interrupt_enter(struct crc_device *cdev, unsigned long *flags) {
 	/* BEGIN CRITICAL (cdev->dev_lock) */
 	spin_lock_irqsave(&cdev->dev_lock, *flags);
@@ -91,6 +109,7 @@ fail_removed:
 	return -ENODEV;
 }
 
+// TODO unused
 static __always_inline
 void crc_device_interrupt_exit(struct crc_device *cdev, unsigned long *flags) {
 	spin_unlock_irqrestore(&cdev->dev_lock, *flags);
@@ -104,25 +123,41 @@ void crc_device_ready_start(struct crc_device *cdev) {
 	/* END CRITICAL (cdev->dev_lock) - no one alive new about our device */
 }
 
+// FIXME prove with new reordering
 static __always_inline
 void crc_device_remove_start(struct crc_device *cdev) {
 	unsigned long flags;
-	/* New syscalls will start to fail with -ENODEV from now */
-	set_bit(CRCDEV_STATUS_REMOVED, &cdev->status);
-	/* Note that there might be some calls waiting for free tasks and
-	 * holding cdev->remove_lock, we have to wake up all of them, so that
-	 * they will spot STATUS_REMOVED and free cdev->remove_lock.
-	 * Calls acquiring cdev->remove_lock just before us will exit too */
-	/* DOWN (cdev->remove_lock) WRITE */
-	down_write(&cdev->remove_lock);
+	struct crc_task *task, *tmp;
 	/* BEGIN CRITICAL (cdev->dev_lock) */
 	spin_lock_irqsave(&cdev->dev_lock, flags);
-	/* New interrupts will start to abort from now */
+	/* Interrupts will start to abort from now */
 	clear_bit(CRCDEV_STATUS_READY, &cdev->status);
 	/* This stops DMA activity and disables interrupts */
 	crc_reset_device(cdev->bar0);
 	spin_unlock_irqrestore(&cdev->dev_lock, flags);
 	/* END CRITICAL (cdev->dev_lock) */
+
+	/* New syscalls and awoken ones will start to fail with -ENODEV */
+	set_bit(CRCDEV_STATUS_REMOVED, &cdev->status);
+	/* Wakeup all waiting ioctls, to do this we have to complete_all() all
+	 * not completed ioctl_comp in sessions. We can't reach all sessions,
+	 * but only those who have waiting/scheduled tasks.
+	 * REMARK: ioctl_compl is completed `iff` it has no tasks
+	 * therefore we can scan waiting and scheduled tasks only */
+	/* BEGIN CRITICAL (cdev->dev_lock) */
+	spin_lock_irqsave(&cdev->dev_lock, flags);
+	list_for_each_entry_safe(task, tmp, &cdev->waiting_tasks, list) {
+		crc_session_tasks_done(task->session);
+	}
+	list_for_each_entry_safe(task, tmp, &cdev->scheduled_tasks, list) {
+		crc_session_tasks_done(task->session);
+	}
+	spin_unlock_irqrestore(&cdev->dev_lock, flags);
+	/* END CRITICAL (cdev->dev_lock) */
+	/* Wakeup all waiting writes, they will spot STATUS_REMOVED and die */
+	// FIXME
+	/* DOWN (cdev->remove_lock) WRITE */
+	down_write(&cdev->remove_lock);
 }
 
 #endif  // MONITORS_H_

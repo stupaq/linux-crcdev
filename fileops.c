@@ -28,9 +28,13 @@ fail_dev:
 static int crc_fileops_release(struct inode *inode, struct file *filp) {
 	struct crc_device *cdev;
 	struct crc_session *sess;
+	/* Note that there are no other syscalls to this session, it can be
+	 * reference by irq handler, remove device code and us */
 	if ((sess = filp->private_data)) {
 		cdev = sess->crc_dev;
-		// FIXME wait for all tasks to complete
+		/* Wait for all tasks to complete, tasks's session pointer must
+		 * stay valid since it will be dereferenced by irq handler */
+		wait_for_completion(&sess->ioctl_comp);
 		crc_session_free(sess); sess = NULL;
 		crc_device_put(cdev); cdev = NULL;
 	}
@@ -60,9 +64,11 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		list_del(&task->list);
 		spin_unlock_irqrestore(&cdev->dev_lock, flags);
 		/* END CRITICAL (cdev->dev_lock) */
-		// TODO
-		/* There is no concurrent ioctl/write for the same session */
-		// FIXME lock ioctl
+		crc_task_attach(sess, task);
+		// TODO copy data
+		/* There is no concurrent ioctl for the same session, we can
+		 * reinitialize completion */
+		crc_session_tasks_new(sess);
 		/* BEGIN CRITICAL (cdev->dev_lock) */
 		spin_lock_irqsave(&cdev->dev_lock, flags);
 		list_add_tail(&task->list, &cdev->waiting_tasks);
@@ -100,13 +106,19 @@ exit:
 static int crc_ioctl_get_result(struct crc_session *sess, void __user * argp) {
 	int rv = 0;
 	struct crcdev_ioctl_get_result result;
-	result.sum = 42;
+	/* Wait for all tasks to complete, there is no concurrent write (no one
+	 * can reinitialize this completion) */
+	if ((rv = wait_for_completion_interruptible(&sess->ioctl_comp)))
+		goto fail_ioctl_comp;
 	// TODO
 	if (copy_to_user(argp, &result, sizeof(result))) {
 		rv = -EFAULT;
-		goto exit;
+		goto fail_copy;
 	}
-exit:
+	return rv;
+fail_copy:
+	return -EINVAL;
+fail_ioctl_comp:
 	return rv;
 }
 
