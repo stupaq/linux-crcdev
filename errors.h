@@ -3,12 +3,12 @@
 
 #include <linux/kernel.h>
 #include <linux/err.h>
+#include <linux/bug.h>
 
 // TODO remove this
 #define	ERROR(rv)     (IS_ERR_VALUE(rv) ? rv : -EFAULT)
-// TODO use these
-#define	CRCDEV_INFO   (KERN_INFO "crcdev: ")
-#define	CRCDEV_WARN   (KERN_WARNING "crcdev: ")
-#define	CRCDEV_ERR    (KERN_ERR "crcdev: ")
+
+#define crc_error_hot_unplug() printk(KERN_WARNING \
+		"crcdev: device removed while there was pending syscall")
 
 #endif  /* CEXCEPT_H_ */

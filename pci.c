@@ -34,9 +34,8 @@ void crc_pci_exit(void) {
 	pci_unregister_driver(&crc_pci_driver);
 }
 
-/* UNSAFE */
-static void crc_reset_device(struct crc_device *cdev) {
-	void __iomem* bar0 = cdev->bar0;
+/* unsafe */
+void crc_reset_device(void __iomem* bar0) {
 	/* Disable FETCH_DATA and FETCH_CMD */
 	iowrite32(0, bar0 + CRCDEV_ENABLE);
 	/* Disable interrupts */
@@ -71,7 +70,7 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 		goto fail;
 	}
 	/* This disables interrupts */
-	crc_reset_device(cdev);
+	crc_reset_device(cdev->bar0);
 	/* Device won't try to do anything */
 	pci_set_master(pdev);
 	if ((rv = pci_set_dma_mask(pdev, DMA_BIT_MASK(CRCDEV_DMA_BITS))))
@@ -95,9 +94,8 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	if ((rv = request_irq(pdev->irq, crc_irq_dispatcher, IRQF_SHARED,
 					CRCDEV_PCI_NAME, cdev)))
 		goto fail;
-	set_bit(CRCDEV_STATUS_IRQ, &cdev->status);
-	set_bit(CRCDEV_STATUS_READY, &cdev->status);
-	/* END CRITICAL (cdev->dev_lock) - no one alive new about our device */
+	/* START (ready) */
+	crc_device_ready_start(cdev);
 	/* Enable ALL interrupts ATOMICALLY, device will run after this and idle
 	 * immediately (there is no pending commands yet) */
 	iowrite32(CRCDEV_INTR_ALL, cdev->bar0 + CRCDEV_INTR_ENABLE);
@@ -125,7 +123,6 @@ fail_enable:
 // FIXME removing must be mutually exclusive with ALL calls
 // FIXME removing must wakeup ALL waiting calls before entering remove lock
 static void crc_remove(struct pci_dev *pdev) {
-	unsigned long flags;
 	struct crc_device* cdev = NULL;
 	printk(KERN_INFO "crcdev: removing PCI device %x:%x:%x.", pdev->vendor,
 			pdev->device, pdev->devfn);
@@ -136,14 +133,6 @@ static void crc_remove(struct pci_dev *pdev) {
 		goto pci_finalize_remove;
 	/* START (remove) */
 	crc_device_remove_start(cdev);
-	/* BEGIN CRITICAL (cdev->dev_lock) */
-	spin_lock_irqsave(&cdev->dev_lock, flags);
-	/* New interrupts will start to abort from now */
-	clear_bit(CRCDEV_STATUS_READY, &cdev->status);
-	/* This stops DMA activity and disables interrupts */
-	crc_reset_device(cdev);
-	spin_unlock_irqrestore(&cdev->dev_lock, flags);
-	/* END CRITICAL (cdev->dev_lock) */
 	/* Remove from sysfs and unregister char device */
 	crc_sysfs_del(pdev, cdev);
 	crc_chrdev_del(pdev, cdev);
@@ -153,7 +142,7 @@ static void crc_remove(struct pci_dev *pdev) {
 		free_irq(pdev->irq, cdev);
 	clear_bit(CRCDEV_STATUS_IRQ, &cdev->status);
 	/* Free DMA memory (this needs irqs), we also need all
-	 * tasks to reside in of the queues */
+	 * tasks to reside in one of the queues */
 	crc_device_dma_free(pdev, cdev);
 	pci_clear_master(pdev);
 	/* Unmap memory regions */

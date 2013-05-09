@@ -10,4 +10,6 @@ int __must_check crc_pci_init(void);
 
 void crc_pci_exit(void);
 
+void crc_reset_device(void __iomem*);
+
 #endif  /* PCI_H_ */

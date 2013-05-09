@@ -54,6 +54,7 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		/* We know that there is a task for us (we can take only one) */
 		/* BEGIN CRITICAL (cdev->dev_lock) */
 		spin_lock_irqsave(&cdev->dev_lock, flags);
+		WARN_ON(list_empty(&cdev->free_tasks));
 		task = list_first_entry(&cdev->free_tasks, struct crc_task,
 				list);
 		list_del(&task->list);
