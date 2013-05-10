@@ -83,6 +83,7 @@ static void crc_irq_handler_fetch_data(struct crc_device *cdev) {
 		}
 		list_del(&task->list);
 		list_add(&task->list, &cdev->free_tasks);
+		mon_session_free_task(sess);
 		cdev_pending_done(cdev);
 	}
 	/* Enable all */
