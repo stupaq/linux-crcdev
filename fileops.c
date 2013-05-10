@@ -5,6 +5,7 @@
 #include "fileops.h"
 #include "concepts.h"
 #include "monitors.h"
+#include "interrupts.h"
 
 MODULE_LICENSE("GPL");
 
@@ -82,6 +83,7 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		INIT_COMPLETION(sess->ioctl_comp);
 		list_add_tail(&task->list, &cdev->waiting_tasks);
 		sess->waiting_count++;
+		crc_irq_enable_all(cdev);
 		mon_device_unlock(cdev, flags);
 		/* END CRITICAL (cdev->dev_lock) */
 	}

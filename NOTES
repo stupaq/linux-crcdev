@@ -5,6 +5,7 @@ MANUAL TESTS
 ------------
 - kref memory management
 - removing driver/device while ioctl/write syscall waits
+- check initialization functions for concepts
 
 PENDING DILEMMAS
 ----------------

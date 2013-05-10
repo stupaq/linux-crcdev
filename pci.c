@@ -45,10 +45,20 @@ void crc_reset_device(void __iomem* bar0) {
 	/* Set empty FETCH_DATA buffer */
 	iowrite32(0, bar0 + CRCDEV_FETCH_DATA_COUNT);
 	/* Set empty FETCH_CMD buffer */
+	/* Just like the initial value of  cdev->next_pos */
 	iowrite32(0, bar0 + CRCDEV_FETCH_CMD_READ_POS);
 	iowrite32(0, bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
 	/* Clear FETCH_DATA interrupt */
 	iowrite32(0, bar0 + CRCDEV_FETCH_DATA_INTR_ACK);
+}
+
+/* unsafe */
+static void crc_prepare_fetch_cmd(struct crc_device *cdev) {
+	iowrite32(cdev->cmd_block_dma, cdev->bar0 + CRCDEV_FETCH_CMD_ADDR);
+	iowrite32(cdev->cmd_block_len, cdev->bar0 + CRCDEV_FETCH_CMD_SIZE);
+	/* Enable fetch cmd and fetch data (there are no commands) */
+	iowrite32(CRCDEV_ENABLE_FETCH_DATA | CRCDEV_ENABLE_FETCH_CMD,
+			cdev->bar0 + CRCDEV_ENABLE);
 }
 
 static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
@@ -82,11 +92,6 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 		goto fail;
 	if ((rv = crc_device_dma_alloc(pdev, cdev)))
 		goto fail;
-	/* Setup cmd block */
-	iowrite32(cdev->cmd_block_dma, cdev->bar0 + CRCDEV_FETCH_CMD_ADDR);
-	iowrite32(cdev->cmd_block_len, cdev->bar0 + CRCDEV_FETCH_CMD_SIZE);
-	iowrite32(0, cdev->bar0 + CRCDEV_FETCH_CMD_READ_POS);
-	iowrite32(0, cdev->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
 	/* Setup interrupts, device is ready and waiting after this step */
 	if (pdev->irq == 0) {
 		printk(KERN_INFO "crcdev: device cannot generate interrupts");
@@ -96,11 +101,13 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	if ((rv = request_irq(pdev->irq, crc_irq_dispatcher, IRQF_SHARED,
 					CRCDEV_PCI_NAME, cdev)))
 		goto fail;
+	/* Setup cmd block */
+	crc_prepare_fetch_cmd(cdev);
 	/* START (ready) */
 	mon_device_ready_start(cdev);
 	/* Enable ALL interrupts ATOMICALLY, device will run after this and idle
 	 * immediately (there is no pending commands yet) */
-	iowrite32(CRCDEV_INTR_ALL, cdev->bar0 + CRCDEV_INTR_ENABLE);
+	crc_irq_enable_all(cdev);
 	/* After registering char device someone can use it */
 	if ((rv = crc_chrdev_add(pdev, cdev)))
 		goto fail;

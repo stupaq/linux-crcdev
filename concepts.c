@@ -12,6 +12,7 @@ struct crc_session * __must_check crc_session_alloc(struct crc_device *cdev) {
 		mutex_init(&sess->call_lock);
 		init_completion(&sess->ioctl_comp);
 		complete_all(&sess->ioctl_comp);
+		sess->ctx = CRCDEV_SESSION_NOCTX;
 	}
 	return sess;
 }
@@ -34,6 +35,7 @@ struct crc_device * __must_check crc_device_alloc(void) {
 		goto fail_alloc;
 	/* Obtain minor */
 	mutex_lock(&crc_device_minors_lock);
+	// FIXME bitops are just enough
 	idx = bitmap_find_free_region(crc_device_minors, CRCDEV_DEVS_COUNT, 0);
 	if (idx >= 0) {
 		bitmap_allocate_region(crc_device_minors, idx, 0);
@@ -46,6 +48,8 @@ struct crc_device * __must_check crc_device_alloc(void) {
 	spin_lock_init(&cdev->dev_lock);
 	init_rwsem(&cdev->remove_lock);
 	sema_init(&cdev->free_tasks_wait, 0);
+	/* Contexts */
+	bitmap_zero(cdev->contexts_map, CRCDEV_CTX_COUNT);
 	/* Task lists */
 	INIT_LIST_HEAD(&cdev->free_tasks);
 	INIT_LIST_HEAD(&cdev->waiting_tasks);

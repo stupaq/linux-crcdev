@@ -26,18 +26,21 @@ int __must_check crc_concepts_init(void);
 void crc_concepts_exit(void);
 
 /* crc_session */
+#define CRCDEV_SESSION_NOCTX	(-1)
+
 struct crc_session {
 	struct crc_device *crc_dev;
 	/* Locks */
 	struct mutex call_lock;
 	/* Complete iff waiting_count + scheduled_count == 0 */
-	struct completion ioctl_comp;		// call_lock(rw), dev_lock(rw)
+	struct completion ioctl_comp;		// call_lock(w), dev_lock(w)
 	/* Task stats */
-	size_t waiting_count;			// call_lock(rw), dev_lock(rw)
-	size_t scheduled_count;			// call_lock(rw), dev_lock(rw)
+	size_t waiting_count;			// dev_lock(rw)
+	size_t scheduled_count;			// dev_lock(rw)
 	/* Context */
-	u32 poly;				// call_lock(rw), dev_lock(rw)
-	u32 sum;				// call_lock(rw), dev_lock(rw)
+	int ctx;				// dev_lock(rw)
+	u32 poly;				// dev_lock(rw)
+	u32 sum;				// dev_lock(rw)
 };
 
 struct crc_session * __must_check crc_session_alloc(struct crc_device *);
@@ -61,21 +64,9 @@ void crc_task_attach(struct crc_session *sess, struct crc_task *task) {
 };
 
 struct crc_command {
-	u32 __bitwise addr;
-	u32 __bitwise count_ctx;
+	__le32 addr;
+	__le32 count_ctx;
 };
-
-static __always_inline void
-crc_command_set_count(struct crc_command *cmd, u32 count) {
-	cmd->count_ctx = (cmd->count_ctx & ~CRCDEV_CMD_COUNT_MASK)
-		| (count & CRCDEV_CMD_COUNT_MASK);
-}
-
-static __always_inline void
-crc_command_set_ctx(struct crc_command *cmd, u8 ctx) {
-	cmd->count_ctx = (cmd->count_ctx & CRCDEV_CMD_COUNT_MASK)
-		| (ctx & ~CRCDEV_CMD_COUNT_MASK);
-}
 
 /* crc_device */
 #define	CRCDEV_STATUS_IRQ	1
@@ -89,6 +80,8 @@ struct crc_device {
 	spinlock_t dev_lock;
 	struct rw_semaphore remove_lock; /* no reader will ever wait */
 	struct semaphore free_tasks_wait;
+	/* Contexts */
+	DECLARE_BITMAP(contexts_map, CRCDEV_CTX_COUNT);		// dev_lock(rw)
 	/* Tasks for this device */
 	struct list_head free_tasks;		// dev_lock(rw)
 	struct list_head waiting_tasks;		// dev_lock(rw)
@@ -100,6 +93,8 @@ struct crc_device {
 	/* Address of first cmd_block entry in dev address space */
 	dma_addr_t cmd_block_dma;		// init
 	struct crc_command *cmd_block;		// dev_lock(rw)
+	/* Index in cmd_block of cmd next-to-be-processed by FETCH_DATA irq */
+	size_t next_pos;
 	/* Sysfs device */
 	struct device *sysfs_dev;		// init
 	/* Char dev and its minor number */
