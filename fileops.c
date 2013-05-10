@@ -25,6 +25,7 @@ fail_dev:
 }
 
 static int crc_fileops_release(struct inode *inode, struct file *filp) {
+	int rv = 0;
 	struct crc_device *cdev;
 	struct crc_session *sess;
 	/* Note that there are no other syscalls to this session, it can be
@@ -33,11 +34,11 @@ static int crc_fileops_release(struct inode *inode, struct file *filp) {
 		cdev = sess->crc_dev;
 		/* Wait for all tasks to complete, tasks's session pointer must
 		 * stay valid since it will be dereferenced by irq handler */
-		wait_for_completion(&sess->ioctl_comp);
-		// TODO consider failing here
+		rv = mon_session_tasks_wait(sess);
 		crc_session_free(sess); sess = NULL;
 		crc_device_put(cdev); cdev = NULL;
 	}
+	/* IGNORE (rv) */
 	return 0;
 }
 
@@ -121,9 +122,8 @@ static int crc_ioctl_get_result(struct crc_session *sess, void __user * argp) {
 	struct crcdev_ioctl_get_result result;
 	/* Wait for all tasks to complete, there is no concurrent write (no one
 	 * can reinitialize this completion) */
-	if ((rv = wait_for_completion_interruptible(&sess->ioctl_comp)))
+	if ((rv = mon_session_tasks_wait_interruptible(sess)))
 		goto fail_ioctl_comp;
-	// TODO consider failing here
 	WARN_ON(sess->scheduled_count > 0);
 	WARN_ON(sess->waiting_count > 0);
 	/* There is no waiting tasks nor concurrent write */

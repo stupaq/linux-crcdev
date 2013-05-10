@@ -17,9 +17,9 @@ int __must_check mon_session_call_enter(struct crc_session *sess) {
 		goto fail_removed_1;
 	return rv;
 fail_removed_1:
-	crc_error_hot_unplug();
 	mutex_unlock(&sess->call_lock);
 	/* END CRITICAL (sess->call_lock) */
+	crc_error_hot_unplug();
 	return -ENODEV;
 fail_call_lock:
 	return rv;
@@ -46,16 +46,16 @@ int __must_check mon_session_call_devwide_enter(struct crc_device *cdev,
 		goto fail_removed_2;
 	return rv;
 fail_removed_2:
-	crc_error_hot_unplug();
 	up_read(&cdev->remove_lock);
 	/* END CRITICAL (cdev->remove_lock) READ */
 	mon_session_call_exit(sess);
 	/* EXIT (call) */
+	crc_error_hot_unplug();
 	return -ENODEV;
 fail_remove_lock:
-	crc_error_hot_unplug();
 	mon_session_call_exit(sess);
 	/* EXIT (call) */
+	crc_error_hot_unplug();
 	return -ENODEV;
 fail_call_enter:
 	return rv;
@@ -91,8 +91,32 @@ fail_free_tasks_wait:
 
 static __always_inline
 void mon_session_free_task(struct crc_session *sess) {
-	struct crc_device *cdev = sess->crc_dev;
-	up(&cdev->free_tasks_wait);
+	up(&sess->crc_dev->free_tasks_wait);
+}
+
+static __always_inline __must_check
+int mon_session_tasks_wait_interruptible(struct crc_session *sess) {
+	int rv;
+	if ((rv = wait_for_completion_interruptible(&sess->ioctl_comp))) {
+		if (rv == -ERESTARTSYS)
+			return -EINTR;
+		return rv;
+	}
+	if (test_bit(CRCDEV_STATUS_READY, &sess->crc_dev->status)) {
+		crc_error_hot_unplug();
+		return -ENODEV;
+	}
+	return 0;
+}
+
+static __always_inline __must_check
+int mon_session_tasks_wait(struct crc_session *sess) {
+	wait_for_completion(&sess->ioctl_comp);
+	if (test_bit(CRCDEV_STATUS_READY, &sess->crc_dev->status)) {
+		crc_error_hot_unplug();
+		return -ENODEV;
+	}
+	return 0;
 }
 
 // TODO unused
@@ -106,6 +130,7 @@ int mon_device_interrupt_enter(struct crc_device *cdev, unsigned long *flags) {
 fail_removed:
 	spin_unlock_irqrestore(&cdev->dev_lock, *flags);
 	/* END CRITICAL (cdev->dev_lock) */
+	crc_error_hot_unplug();
 	return -ENODEV;
 }
 
