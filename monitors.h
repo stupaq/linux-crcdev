@@ -107,7 +107,7 @@ int mon_session_tasks_wait_interruptible(struct crc_session *sess) {
 			return -EINTR;
 		return rv;
 	}
-	if (test_bit(CRCDEV_STATUS_READY, &sess->crc_dev->status)) {
+	if (test_bit(CRCDEV_STATUS_REMOVED, &sess->crc_dev->status)) {
 		crc_error_hot_unplug();
 		return -ENODEV;
 	}
@@ -117,7 +117,7 @@ int mon_session_tasks_wait_interruptible(struct crc_session *sess) {
 static __always_inline __must_check
 int mon_session_tasks_wait(struct crc_session *sess) {
 	wait_for_completion(&sess->ioctl_comp);
-	if (test_bit(CRCDEV_STATUS_READY, &sess->crc_dev->status)) {
+	if (test_bit(CRCDEV_STATUS_REMOVED, &sess->crc_dev->status)) {
 		crc_error_hot_unplug();
 		return -ENODEV;
 	}
