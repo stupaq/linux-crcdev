@@ -55,7 +55,7 @@ void crc_reset_device(void __iomem* bar0) {
 /* unsafe */
 static void crc_prepare_fetch_cmd(struct crc_device *cdev) {
 	iowrite32(cdev->cmd_block_dma, cdev->bar0 + CRCDEV_FETCH_CMD_ADDR);
-	iowrite32(cdev->cmd_block_len, cdev->bar0 + CRCDEV_FETCH_CMD_SIZE);
+	iowrite32(CRCDEV_COMMANDS_LENGTH, cdev->bar0 + CRCDEV_FETCH_CMD_SIZE);
 	/* Enable fetch cmd and fetch data (there are no commands) */
 	iowrite32(CRCDEV_ENABLE_FETCH_DATA | CRCDEV_ENABLE_FETCH_CMD,
 			cdev->bar0 + CRCDEV_ENABLE);

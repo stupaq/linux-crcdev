@@ -11,11 +11,14 @@
 #include <linux/spinlock.h>
 #include <linux/pci.h>
 #include <linux/cdev.h>
+#include <asm/page.h>
 #include "crcdev.h"
 
-#define	CRCDEV_CMDS_COUNT	32
-#define	CRCDEV_BUFFERS_COUNT	4 // TODO
-#define	CRCDEV_BUFFER_SIZE	4096 // TODO
+// TODO deal with less blocks than exact count
+#define	CRCDEV_BUFFERS_LOWER	8
+#define	CRCDEV_BUFFERS_COUNT	24
+#define	CRCDEV_COMMANDS_LENGTH	(CRCDEV_BUFFERS_COUNT + 1)
+#define	CRCDEV_BUFFER_SIZE	(PAGE_SIZE * 4)
 #define	CRCDEV_DEVS_COUNT	255
 #define	CRCDEV_BASE_MINOR	0
 
@@ -89,8 +92,6 @@ struct crc_device {
 	struct list_head scheduled_tasks;	// dev_lock(rw)
 	/* BAR0 address */
 	void __iomem *bar0;			// dev_lock(rw)
-	/* Number of entries in cmd_block */
-	size_t cmd_block_len;			// init
 	/* Address of first cmd_block entry in dev address space */
 	dma_addr_t cmd_block_dma;		// init
 	struct crc_command *cmd_block;		// dev_lock(rw)

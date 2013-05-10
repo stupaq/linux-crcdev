@@ -14,11 +14,11 @@ MODULE_LICENSE("GPL");
 	iowrite32(idx, (cdev)->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
 
 #define cdev_is_pending(cdev)	((cdev)->next_pos != cdev_read_pos(cdev))
-/* If CRCDEV_CMDS_COUNT >= CRCDEV_BUFFERS_COUNT this is optimized to true */
-#define cdev_is_cmd_full(cdev)	((CRCDEV_CMDS_COUNT < CRCDEV_BUFFERS_COUNT) \
-		&& ((cdev)->next_pos == cdev_write_pos(cdev)))
+#define cdev_is_cmd_full(cdev)	({ \
+		BUILD_BUG_ON(CRCDEV_COMMANDS_LENGTH <= CRCDEV_BUFFERS_COUNT); \
+		0; })
 #define cdev_pending_done(cdev)	{ (cdev)->next_pos = \
-	circular_next((cdev)->next_pos, (cdev)->cmd_block_len); }
+	circular_next((cdev)->next_pos, CRCDEV_COMMANDS_LENGTH); }
 
 static __always_inline void cdev_put_command(struct crc_task *task) {
 	struct crc_device *cdev = task->session->crc_dev;
@@ -29,7 +29,7 @@ static __always_inline void cdev_put_command(struct crc_task *task) {
 			| ((ctx & CRCDEV_CMD_CTX_MASK) <<
 				CRCDEV_CMD_CTX_SHIFT));
 	cmd->addr = cpu_to_le32(task->data_dma);
-	idx = circular_next(idx, cdev->cmd_block_len);
+	idx = circular_next(idx, CRCDEV_COMMANDS_LENGTH);
 	cdev_set_write_pos(cdev, idx);
 }
 

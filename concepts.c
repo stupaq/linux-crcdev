@@ -35,14 +35,13 @@ struct crc_device * __must_check crc_device_alloc(void) {
 		goto fail_alloc;
 	/* Obtain minor */
 	mutex_lock(&crc_device_minors_lock);
-	// FIXME bitops are just enough
-	idx = bitmap_find_free_region(crc_device_minors, CRCDEV_DEVS_COUNT, 0);
-	if (idx >= 0) {
-		bitmap_allocate_region(crc_device_minors, idx, 0);
+	idx = find_first_zero_bit(crc_device_minors, CRCDEV_DEVS_COUNT);
+	if (0 <= idx && idx < CRCDEV_DEVS_COUNT) {
+		set_bit(idx, crc_device_minors);
 		crc_device_minors_mapping[idx] = cdev;
 	}
 	mutex_unlock(&crc_device_minors_lock);
-	if (idx < 0)
+	if (idx < 0 || CRCDEV_DEVS_COUNT <= idx)
 		goto fail_minor;
 	/* Locks */
 	spin_lock_init(&cdev->dev_lock);
@@ -71,7 +70,7 @@ static void crc_device_free_kref(struct kref *ref) {
 	struct crc_device *cdev = container_of(ref, struct crc_device, refc);
 	int idx = cdev->minor - CRCDEV_BASE_MINOR;
 	/* Relese minor after removing device */
-	bitmap_release_region(crc_device_minors, idx, 0);
+	clear_bit(idx, crc_device_minors);
 	crc_device_minors_mapping[idx] = NULL;
 	/* Free mem */
 	kfree(cdev); cdev = NULL;
@@ -104,9 +103,8 @@ int __must_check crc_device_dma_alloc(struct pci_dev *pdev,
 		struct crc_device *cdev) {
 	int count;
 	struct crc_task *task;
-	cdev->cmd_block_len = CRCDEV_CMDS_COUNT;
 	cdev->cmd_block = dma_alloc_coherent(&pdev->dev,
-			sizeof(*(cdev->cmd_block)) * cdev->cmd_block_len,
+			sizeof(*(cdev->cmd_block)) * CRCDEV_COMMANDS_LENGTH,
 			&cdev->cmd_block_dma, GFP_KERNEL);
 	if (!cdev->cmd_block)
 		goto fail;
@@ -137,7 +135,7 @@ void crc_device_dma_free(struct pci_dev *pdev, struct crc_device *cdev) {
 	struct list_head tmp_list;
 	if (cdev->cmd_block) {
 		dma_free_coherent(&pdev->dev, sizeof(*cdev->cmd_block) *
-				cdev->cmd_block_len, cdev->cmd_block,
+				CRCDEV_COMMANDS_LENGTH, cdev->cmd_block,
 				cdev->cmd_block_dma);
 		cdev->cmd_block = NULL;
 	}
@@ -149,7 +147,6 @@ void crc_device_dma_free(struct pci_dev *pdev, struct crc_device *cdev) {
 	list_splice_init(&cdev->scheduled_tasks, &tmp_list);
 	mon_device_unlock(cdev, flags);
 	/* END CRITICAL (cdev->dev_lock) */
-	// FIXME deal with smaller number of blocks too
 	list_for_each_entry_safe(task, tmp, &tmp_list, list) {
 		dma_free_coherent(&pdev->dev, CRCDEV_BUFFER_SIZE, task->data,
 				task->data_dma);
