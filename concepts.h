@@ -29,16 +29,15 @@ void crc_concepts_exit(void);
 struct crc_session {
 	struct crc_device *crc_dev;
 	/* Locks */
-	spinlock_t sess_lock;
 	struct mutex call_lock;
 	/* Complete iff waiting_count + scheduled_count == 0 */
-	struct completion ioctl_comp;		// sess_lock(lu)
+	struct completion ioctl_comp;		// call_lock(rw), dev_lock(rw)
 	/* Task stats */
-	size_t waiting_count;			// sess_lock(rw)
-	size_t scheduled_count;			// sess_lock(rw)
+	size_t waiting_count;			// call_lock(rw), dev_lock(rw)
+	size_t scheduled_count;			// call_lock(rw), dev_lock(rw)
 	/* Context */
-	u32 poly;				// sess_lock(rw)
-	u32 sum;				// sess_lock(rw)
+	u32 poly;				// call_lock(rw), dev_lock(rw)
+	u32 sum;				// call_lock(rw), dev_lock(rw)
 };
 
 struct crc_session * __must_check crc_session_alloc(struct crc_device *);

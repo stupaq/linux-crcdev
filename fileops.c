@@ -24,7 +24,6 @@ fail_dev:
 	return -ENODEV;
 }
 
-// FIXME concurrent write/ioctl and release?
 static int crc_fileops_release(struct inode *inode, struct file *filp) {
 	struct crc_device *cdev;
 	struct crc_session *sess;
@@ -35,6 +34,7 @@ static int crc_fileops_release(struct inode *inode, struct file *filp) {
 		/* Wait for all tasks to complete, tasks's session pointer must
 		 * stay valid since it will be dereferenced by irq handler */
 		wait_for_completion(&sess->ioctl_comp);
+		// TODO consider failing here
 		crc_session_free(sess); sess = NULL;
 		crc_device_put(cdev); cdev = NULL;
 	}
@@ -44,15 +44,16 @@ static int crc_fileops_release(struct inode *inode, struct file *filp) {
 /* Note that write and ioctl are serialized using session->call_lock */
 static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		size_t count, loff_t *offp) {
-	int rv = 0;
+	int rv;
 	struct crc_session *sess = filp->private_data;
 	struct crc_device *cdev = sess->crc_dev;
 	unsigned long flags;
 	struct crc_task *task;
+	size_t written = 0, max_copy;
 	/* ENTER (call_devwide) */
 	if ((rv = mon_session_call_devwide_enter(cdev, sess)))
 		goto fail_call_devwide_enter;
-	// FIXME while (count > 0) {
+	while (count > written) {
 		if ((rv = mon_session_reserve_task(sess)))
 			goto fail_reserve_task;
 		/* We know that there is a task for us (we can take only one) */
@@ -65,25 +66,37 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		spin_unlock_irqrestore(&cdev->dev_lock, flags);
 		/* END CRITICAL (cdev->dev_lock) */
 		crc_task_attach(sess, task);
-		// TODO copy data
-		/* There is no concurrent ioctl nor remove has started, we can
-		 * reinitialize completion */
-		mon_session_tasks_new(sess);
+		/* This may sleep */
+		max_copy = (count > task->data_sz) ? task->data_sz : count;
+		if (copy_from_user(task->data, buff, max_copy))
+			goto fail_copy;
+		written += max_copy;
+		*offp += max_copy;
 		/* BEGIN CRITICAL (cdev->dev_lock) */
 		spin_lock_irqsave(&cdev->dev_lock, flags);
+		/* There is no concurrent ioctl nor remove has started, we have
+		 * locked interrupts, no one will wait or complete ioctl_comp */
+		INIT_COMPLETION(sess->ioctl_comp);
 		list_add_tail(&task->list, &cdev->waiting_tasks);
+		sess->waiting_count++;
 		spin_unlock_irqrestore(&cdev->dev_lock, flags);
 		/* END CRITICAL (cdev->dev_lock) */
-	// FIXME }
+	}
+	WARN_ON(written > count);
 	mon_session_call_devwide_exit(cdev, sess);
 	/* EXIT (call_devwide) */
-	// TODO
+	return written;
+fail_copy:
+	mon_session_call_devwide_exit(cdev, sess);
+	/* EXIT (call_devwide) */
 	return -EFAULT;
 fail_reserve_task:
 	mon_session_call_devwide_exit(cdev, sess);
 	/* EXIT (call_devwide) */
+	// FIXME what to return when written > 0 and -EINTR?
 	return rv;
 fail_call_devwide_enter:
+	// FIXME what to return when written > 0 and -EINTR?
 	return rv;
 }
 
@@ -91,33 +104,35 @@ fail_call_devwide_enter:
  * called after write but before ioctl(CRCDEV_IOCTL_GET_RESULT) */
 /* CRITICAL (call) */
 static int crc_ioctl_set_params(struct crc_session *sess, void __user * argp) {
-	int rv = 0;
 	struct crcdev_ioctl_set_params params;
-	if (copy_from_user(&params, argp, sizeof(params))) {
-		rv = -EFAULT;
-		goto exit;
-	}
-	// TODO
-exit:
-	return rv;
+	if (copy_from_user(&params, argp, sizeof(params)))
+		goto fail_copy;
+	/* This can corrupt computation */
+	sess->poly = params.sum;
+	sess->sum = params.sum;
+	return 0;
+fail_copy:
+	return -EFAULT;
 }
 
 /* CRITICAL (call) */
 static int crc_ioctl_get_result(struct crc_session *sess, void __user * argp) {
-	int rv = 0;
+	int rv;
 	struct crcdev_ioctl_get_result result;
 	/* Wait for all tasks to complete, there is no concurrent write (no one
 	 * can reinitialize this completion) */
 	if ((rv = wait_for_completion_interruptible(&sess->ioctl_comp)))
 		goto fail_ioctl_comp;
-	// TODO
-	if (copy_to_user(argp, &result, sizeof(result))) {
-		rv = -EFAULT;
+	// TODO consider failing here
+	WARN_ON(sess->scheduled_count > 0);
+	WARN_ON(sess->waiting_count > 0);
+	/* There is no waiting tasks nor concurrent write */
+	result.sum = sess->sum;
+	if (copy_to_user(argp, &result, sizeof(result)))
 		goto fail_copy;
-	}
 	return rv;
 fail_copy:
-	return -EINVAL;
+	return -EFAULT;
 fail_ioctl_comp:
 	return rv;
 }

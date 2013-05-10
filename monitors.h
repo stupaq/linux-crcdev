@@ -95,23 +95,6 @@ void mon_session_free_task(struct crc_session *sess) {
 	up(&cdev->free_tasks_wait);
 }
 
-static __always_inline
-void mon_session_tasks_done(struct crc_session *sess) {
-	unsigned long flags;
-	spin_lock_irqsave(&sess->sess_lock, flags);
-	complete_all(&sess->ioctl_comp);
-	spin_unlock_irqrestore(&sess->sess_lock, flags);
-}
-
-/* unsafe, must be called when no one waits for completion */
-static __always_inline
-void mon_session_tasks_new(struct crc_session *sess) {
-	unsigned long flags;
-	spin_lock_irqsave(&sess->sess_lock, flags);
-	INIT_COMPLETION(sess->ioctl_comp);
-	spin_unlock_irqrestore(&sess->sess_lock, flags);
-}
-
 // TODO unused
 static __always_inline __must_check
 int mon_device_interrupt_enter(struct crc_device *cdev, unsigned long *flags) {
@@ -176,10 +159,10 @@ void mon_device_remove_start(struct crc_device *cdev) {
 	/* BEGIN CRITICAL (cdev->dev_lock) */
 	spin_lock_irqsave(&cdev->dev_lock, flags);
 	list_for_each_entry_safe(task, tmp, &cdev->waiting_tasks, list) {
-		mon_session_tasks_done(task->session);
+		complete_all(&task->session->ioctl_comp);
 	}
 	list_for_each_entry_safe(task, tmp, &cdev->scheduled_tasks, list) {
-		mon_session_tasks_done(task->session);
+		complete_all(&task->session->ioctl_comp);
 	}
 	spin_unlock_irqrestore(&cdev->dev_lock, flags);
 	/* END CRITICAL (cdev->dev_lock) */

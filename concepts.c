@@ -6,7 +6,6 @@ struct crc_session * __must_check crc_session_alloc(struct crc_device *cdev) {
 	struct crc_session *sess;
 	if ((sess = kzalloc(sizeof(*sess), GFP_KERNEL))) {
 		sess->crc_dev = cdev;
-		spin_lock_init(&sess->sess_lock);
 		mutex_init(&sess->call_lock);
 		init_completion(&sess->ioctl_comp);
 		complete_all(&sess->ioctl_comp);
