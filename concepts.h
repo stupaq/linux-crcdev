@@ -52,8 +52,9 @@ struct crc_task {
 	struct list_head list;
 	/* Session which this task belongs to */
 	struct crc_session *session;
+	/* This is a size of meaningful data in buffer */
+	size_t data_count;
 	/* Address of data in device's address space */
-	size_t data_sz;
 	dma_addr_t data_dma;
 	u8 *data;
 };
@@ -66,7 +67,7 @@ void crc_task_attach(struct crc_session *sess, struct crc_task *task) {
 struct crc_command {
 	__le32 addr;
 	__le32 count_ctx;
-};
+} __packed;
 
 /* crc_device */
 #define	CRCDEV_STATUS_IRQ	1

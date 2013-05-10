@@ -114,8 +114,7 @@ int __must_check crc_device_dma_alloc(struct pci_dev *pdev,
 		// FIXME deal with smaller number of blocks too
 		if (!(task = kzalloc(sizeof(*task), GFP_KERNEL)))
 			goto fail;
-		task->data_sz = CRCDEV_BUFFER_SIZE;
-		task->data = dma_alloc_coherent(&pdev->dev, task->data_sz,
+		task->data = dma_alloc_coherent(&pdev->dev, CRCDEV_BUFFER_SIZE,
 				&task->data_dma, GFP_KERNEL);
 		if (!task->data) {
 			/* Free partially created task */
@@ -152,7 +151,7 @@ void crc_device_dma_free(struct pci_dev *pdev, struct crc_device *cdev) {
 	/* END CRITICAL (cdev->dev_lock) */
 	// FIXME deal with smaller number of blocks too
 	list_for_each_entry_safe(task, tmp, &tmp_list, list) {
-		dma_free_coherent(&pdev->dev, task->data_sz, task->data,
+		dma_free_coherent(&pdev->dev, CRCDEV_BUFFER_SIZE, task->data,
 				task->data_dma);
 		kfree(task); task = NULL;
 	}

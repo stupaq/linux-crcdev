@@ -47,17 +47,17 @@ static int crc_fileops_release(struct inode *inode, struct file *filp) {
 
 /* Note that write and ioctl are serialized using session->call_lock */
 static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
-		size_t count, loff_t *offp) {
+		size_t lcount, loff_t *offp) {
 	int rv;
 	struct crc_session *sess = filp->private_data;
 	struct crc_device *cdev = sess->crc_dev;
 	unsigned long flags;
 	struct crc_task *task;
-	size_t written = 0, max_copy;
+	size_t written = 0, to_copy;
 	/* ENTER (call_devwide) */
 	if ((rv = mon_session_call_devwide_enter(cdev, sess)))
 		goto fail_call_devwide_enter;
-	while (count > written) {
+	while (lcount > 0) {
 		if ((rv = mon_session_reserve_task(sess)))
 			goto fail_reserve_task;
 		/* We know that there is a task for us (we can take only one) */
@@ -71,11 +71,12 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		/* END CRITICAL (cdev->dev_lock) */
 		crc_task_attach(sess, task);
 		/* This may sleep */
-		max_copy = (count > task->data_sz) ? task->data_sz : count;
-		if (copy_from_user(task->data, buff, max_copy))
+		to_copy = min(lcount, (size_t) CRCDEV_BUFFER_SIZE);
+		if (copy_from_user(task->data, buff, to_copy))
 			goto fail_copy;
-		written += max_copy;
-		*offp += max_copy;
+		lcount -= to_copy;
+		written += to_copy;
+		*offp += to_copy;
 		/* BEGIN CRITICAL (cdev->dev_lock) */
 		mon_device_lock(cdev, flags);
 		/* There is no concurrent ioctl nor remove has started, we have
@@ -87,7 +88,6 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		mon_device_unlock(cdev, flags);
 		/* END CRITICAL (cdev->dev_lock) */
 	}
-	WARN_ON(written > count);
 	mon_session_call_devwide_exit(cdev, sess);
 	/* EXIT (call_devwide) */
 	return written;
