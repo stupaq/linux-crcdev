@@ -6,7 +6,7 @@
 #include "pci.h"
 
 static __always_inline __must_check
-int crc_session_call_enter(struct crc_session *sess) {
+int __must_check crc_session_call_enter(struct crc_session *sess) {
 	int rv = 0;
 	struct crc_device *cdev = sess->crc_dev;
 	/* BEGIN CRITICAL (sess->call_lock) */
@@ -53,10 +53,9 @@ void crc_session_call_exit(struct crc_session *sess) {
 }
 
 static __always_inline __must_check
-int crc_session_reserve_task(struct crc_session *sess) {
+int __must_check crc_session_reserve_task(struct crc_session *sess) {
 	int rv = 0;
 	struct crc_device *cdev = sess->crc_dev;
-	/* DOWN (cdev->free_tasks_wait) */
 	if ((rv = down_interruptible(&cdev->free_tasks_wait)))
 		goto fail_free_tasks_wait;
 	/* We might have been woken up to die */
@@ -65,6 +64,7 @@ int crc_session_reserve_task(struct crc_session *sess) {
 	return rv;
 fail_removed:
 	crc_error_hot_unplug();
+	/* We let another guy know about this */
 	up(&cdev->free_tasks_wait);
 	return -ENODEV;
 fail_free_tasks_wait:
@@ -75,7 +75,6 @@ static __always_inline
 void crc_session_free_task(struct crc_session *sess) {
 	struct crc_device *cdev = sess->crc_dev;
 	up(&cdev->free_tasks_wait);
-	/* UP (cdev->free_tasks_wait) */
 }
 
 static __always_inline
@@ -96,7 +95,7 @@ void crc_session_tasks_new(struct crc_session *sess) {
 }
 
 // TODO unused
-static __always_inline
+static __always_inline __must_check
 int crc_device_interrupt_enter(struct crc_device *cdev, unsigned long *flags) {
 	/* BEGIN CRITICAL (cdev->dev_lock) */
 	spin_lock_irqsave(&cdev->dev_lock, *flags);
@@ -154,9 +153,13 @@ void crc_device_remove_start(struct crc_device *cdev) {
 	}
 	spin_unlock_irqrestore(&cdev->dev_lock, flags);
 	/* END CRITICAL (cdev->dev_lock) */
-	/* Wakeup all waiting writes, they will spot STATUS_REMOVED and die */
-	// FIXME
-	/* DOWN (cdev->remove_lock) WRITE */
+	/* Wakeup all waiting writes, every process waiting or just-to-be
+	 * waiting on free_tasks_wait will spot STATUS_REMOVED flags and reup()
+	 * the semaphore, all waiters will wake up sequentially */
+	up(&cdev->free_tasks_wait);
+
+	/* Acquire remove_lock, all readers with remmove_lock are woken up and
+	 * all locks readers might wait on are up (at least for one process) */
 	down_write(&cdev->remove_lock);
 }
 
