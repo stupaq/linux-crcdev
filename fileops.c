@@ -49,11 +49,11 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 	struct crc_device *cdev = sess->crc_dev;
 	unsigned long flags;
 	struct crc_task *task;
-	/* ENTER (call) */
-	if ((rv = crc_session_call_enter(sess)))
-		goto fail_call_enter;
+	/* ENTER (call_devwide) */
+	if ((rv = mon_session_call_devwide_enter(cdev, sess)))
+		goto fail_call_devwide_enter;
 	// FIXME while (count > 0) {
-		if ((rv = crc_session_reserve_task(sess)))
+		if ((rv = mon_session_reserve_task(sess)))
 			goto fail_reserve_task;
 		/* We know that there is a task for us (we can take only one) */
 		/* BEGIN CRITICAL (cdev->dev_lock) */
@@ -66,24 +66,24 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		/* END CRITICAL (cdev->dev_lock) */
 		crc_task_attach(sess, task);
 		// TODO copy data
-		/* There is no concurrent ioctl for the same session, we can
+		/* There is no concurrent ioctl nor remove has started, we can
 		 * reinitialize completion */
-		crc_session_tasks_new(sess);
+		mon_session_tasks_new(sess);
 		/* BEGIN CRITICAL (cdev->dev_lock) */
 		spin_lock_irqsave(&cdev->dev_lock, flags);
 		list_add_tail(&task->list, &cdev->waiting_tasks);
 		spin_unlock_irqrestore(&cdev->dev_lock, flags);
 		/* END CRITICAL (cdev->dev_lock) */
 	// FIXME }
-	crc_session_call_exit(sess);
-	/* EXIT (call) */
+	mon_session_call_devwide_exit(cdev, sess);
+	/* EXIT (call_devwide) */
 	// TODO
 	return -EFAULT;
 fail_reserve_task:
-	crc_session_call_exit(sess);
-	/* EXIT (call) */
+	mon_session_call_devwide_exit(cdev, sess);
+	/* EXIT (call_devwide) */
 	return rv;
-fail_call_enter:
+fail_call_devwide_enter:
 	return rv;
 }
 
@@ -128,7 +128,7 @@ static long crc_fileops_ioctl(struct file *filp, unsigned int cmd, unsigned long
 	void __user *argp = (__force void __user *) arg;
 	struct crc_session *sess = filp->private_data;
 	/* ENTER (call) */
-	if ((rv = crc_session_call_enter(sess)))
+	if ((rv = mon_session_call_enter(sess)))
 		goto fail_call_enter;
 	switch (cmd) {
 	case CRCDEV_IOCTL_SET_PARAMS:
@@ -140,7 +140,7 @@ static long crc_fileops_ioctl(struct file *filp, unsigned int cmd, unsigned long
 	default:
 		rv = -EINVAL;
 	}
-	crc_session_call_exit(sess);
+	mon_session_call_exit(sess);
 	/* EXIT (call) */
 	return rv;
 fail_call_enter:

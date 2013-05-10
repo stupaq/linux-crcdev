@@ -95,7 +95,7 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 					CRCDEV_PCI_NAME, cdev)))
 		goto fail;
 	/* START (ready) */
-	crc_device_ready_start(cdev);
+	mon_device_ready_start(cdev);
 	/* Enable ALL interrupts ATOMICALLY, device will run after this and idle
 	 * immediately (there is no pending commands yet) */
 	iowrite32(CRCDEV_INTR_ALL, cdev->bar0 + CRCDEV_INTR_ENABLE);
@@ -114,6 +114,7 @@ fail:
 	return ERROR(rv);
 fail_request:
 	pci_disable_device(pdev);
+	return ERROR(rv);
 fail_enable:
 	return ERROR(rv);
 }
@@ -132,7 +133,7 @@ static void crc_remove(struct pci_dev *pdev) {
 	if (!cdev->bar0)
 		goto pci_finalize_remove;
 	/* START (remove) */
-	crc_device_remove_start(cdev);
+	mon_device_remove_start(cdev);
 	/* Remove from sysfs and unregister char device */
 	crc_sysfs_del(pdev, cdev);
 	crc_chrdev_del(pdev, cdev);
