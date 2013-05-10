@@ -1,5 +1,8 @@
 #include "concepts.h"
+#include "monitors.h"
 #include "chrdev.h"
+
+MODULE_LICENSE("GPL");
 
 /* crc_session */
 struct crc_session * __must_check crc_session_alloc(struct crc_device *cdev) {
@@ -137,11 +140,11 @@ void crc_device_dma_free(struct pci_dev *pdev, struct crc_device *cdev) {
 	}
 	INIT_LIST_HEAD(&tmp_list);
 	/* BEGIN CRITICAL (cdev->dev_lock) */
-	spin_lock_irqsave(&cdev->dev_lock, flags);
+	mon_device_lock(cdev, flags);
 	list_splice_init(&cdev->free_tasks, &tmp_list);
 	list_splice_init(&cdev->waiting_tasks, &tmp_list);
 	list_splice_init(&cdev->scheduled_tasks, &tmp_list);
-	spin_unlock_irqrestore(&cdev->dev_lock, flags);
+	mon_device_unlock(cdev, flags);
 	/* END CRITICAL (cdev->dev_lock) */
 	// FIXME deal with smaller number of blocks too
 	list_for_each_entry_safe(task, tmp, &tmp_list, list) {

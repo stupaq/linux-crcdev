@@ -6,6 +6,8 @@
 #include "concepts.h"
 #include "monitors.h"
 
+MODULE_LICENSE("GPL");
+
 static int crc_fileops_open(struct inode *inode, struct file *filp) {
 	struct crc_session *sess;
 	unsigned minor = iminor(inode);
@@ -59,12 +61,12 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 			goto fail_reserve_task;
 		/* We know that there is a task for us (we can take only one) */
 		/* BEGIN CRITICAL (cdev->dev_lock) */
-		spin_lock_irqsave(&cdev->dev_lock, flags);
+		mon_device_lock(cdev, flags);
 		WARN_ON(list_empty(&cdev->free_tasks));
 		task = list_first_entry(&cdev->free_tasks, struct crc_task,
 				list);
 		list_del(&task->list);
-		spin_unlock_irqrestore(&cdev->dev_lock, flags);
+		mon_device_unlock(cdev, flags);
 		/* END CRITICAL (cdev->dev_lock) */
 		crc_task_attach(sess, task);
 		/* This may sleep */
@@ -74,13 +76,13 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		written += max_copy;
 		*offp += max_copy;
 		/* BEGIN CRITICAL (cdev->dev_lock) */
-		spin_lock_irqsave(&cdev->dev_lock, flags);
+		mon_device_lock(cdev, flags);
 		/* There is no concurrent ioctl nor remove has started, we have
 		 * locked interrupts, no one will wait or complete ioctl_comp */
 		INIT_COMPLETION(sess->ioctl_comp);
 		list_add_tail(&task->list, &cdev->waiting_tasks);
 		sess->waiting_count++;
-		spin_unlock_irqrestore(&cdev->dev_lock, flags);
+		mon_device_unlock(cdev, flags);
 		/* END CRITICAL (cdev->dev_lock) */
 	}
 	WARN_ON(written > count);

@@ -5,6 +5,8 @@
 #include "sysfs.h"
 #include "errors.h"
 
+MODULE_LICENSE("GPL");
+
 static struct class *crc_sysfs_class = NULL;
 
 int __must_check crc_sysfs_init(void) {

@@ -1,6 +1,11 @@
 NOTES
 =====
 
+MANUAL TESTS
+------------
+- kref memory management
+- removing driver/device while ioctl/write syscall waits
+
 PENDING DILEMMAS
 ----------------
 

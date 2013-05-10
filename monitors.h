@@ -5,6 +5,11 @@
 #include "concepts.h"
 #include "pci.h"
 
+#define mon_device_lock(cdev, flags) \
+	spin_lock_irqsave(&(cdev)->dev_lock, flags);
+#define mon_device_unlock(cdev, flags) \
+	spin_unlock_irqrestore(&(cdev)->dev_lock, flags);
+
 static __always_inline __must_check
 int __must_check mon_session_call_enter(struct crc_session *sess) {
 	int rv = 0;
@@ -119,28 +124,6 @@ int mon_session_tasks_wait(struct crc_session *sess) {
 	return 0;
 }
 
-// TODO unused
-static __always_inline __must_check
-int mon_device_interrupt_enter(struct crc_device *cdev, unsigned long *flags) {
-	/* BEGIN CRITICAL (cdev->dev_lock) */
-	spin_lock_irqsave(&cdev->dev_lock, *flags);
-	if (test_bit(CRCDEV_STATUS_READY, &cdev->status))
-		goto fail_removed;
-	return 0;
-fail_removed:
-	spin_unlock_irqrestore(&cdev->dev_lock, *flags);
-	/* END CRITICAL (cdev->dev_lock) */
-	crc_error_hot_unplug();
-	return -ENODEV;
-}
-
-// TODO unused
-static __always_inline
-void mon_device_interrupt_exit(struct crc_device *cdev, unsigned long *flags) {
-	spin_unlock_irqrestore(&cdev->dev_lock, *flags);
-	/* END CRITICAL (cdev->dev_lock) */
-}
-
 static __always_inline
 void mon_device_ready_start(struct crc_device *cdev) {
 	set_bit(CRCDEV_STATUS_IRQ, &cdev->status);
@@ -154,12 +137,12 @@ void mon_device_remove_start(struct crc_device *cdev) {
 	unsigned long flags;
 	struct crc_task *task, *tmp;
 	/* BEGIN CRITICAL (cdev->dev_lock) */
-	spin_lock_irqsave(&cdev->dev_lock, flags);
+	mon_device_lock(cdev, flags);
 	/* Interrupts will start to abort from now */
 	clear_bit(CRCDEV_STATUS_READY, &cdev->status);
 	/* This stops DMA activity and disables interrupts */
 	crc_reset_device(cdev->bar0);
-	spin_unlock_irqrestore(&cdev->dev_lock, flags);
+	mon_device_unlock(cdev, flags);
 	/* END CRITICAL (cdev->dev_lock) */
 
 	/* New syscalls and awoken ones will start to fail with -ENODEV */
@@ -182,14 +165,14 @@ void mon_device_remove_start(struct crc_device *cdev) {
 	 * REMARK: ioctl_compl is completed `iff` it has no tasks
 	 * therefore we can scan waiting and scheduled tasks only */
 	/* BEGIN CRITICAL (cdev->dev_lock) */
-	spin_lock_irqsave(&cdev->dev_lock, flags);
+	mon_device_lock(cdev, flags);
 	list_for_each_entry_safe(task, tmp, &cdev->waiting_tasks, list) {
 		complete_all(&task->session->ioctl_comp);
 	}
 	list_for_each_entry_safe(task, tmp, &cdev->scheduled_tasks, list) {
 		complete_all(&task->session->ioctl_comp);
 	}
-	spin_unlock_irqrestore(&cdev->dev_lock, flags);
+	mon_device_unlock(cdev, flags);
 	/* END CRITICAL (cdev->dev_lock) */
 }
 

@@ -1,6 +1,9 @@
 #include "interrupts.h"
 #include "concepts.h"
 #include "crcdev.h"
+#include "monitors.h"
+
+MODULE_LICENSE("GPL");
 
 /* CRITICAL (interrupt) */
 static void crc_irq_handler_fetch_data(struct crc_device *cdev) {
@@ -29,8 +32,7 @@ irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
 	 * this reference can only be destroyed after free_irq() */
 	struct crc_device *cdev = (struct crc_device *) dev_id;
 	/* ENTER (interrupt) */
-	/* BEGIN CRITICAL (cdev->dev_lock) */
-	spin_lock_irqsave(&cdev->dev_lock, flags);
+	mon_device_lock(cdev, flags);
 	if (test_bit(CRCDEV_STATUS_READY, &cdev->status)) {
 		/* Check if it was our device and which interrupt fired */
 		intr = ioread32(cdev->bar0 + CRCDEV_INTR);
@@ -60,8 +62,7 @@ irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
 	/* If device is not ready then crc_remove has been called and interrupts
 	 * are already disabled, this interrupt won't be raised again if it came
 	 * from our device */
-	spin_unlock_irqrestore(&cdev->dev_lock, flags);
-	/* END CRITICAL (cdev->dev_lock) */
+	mon_device_unlock(cdev, flags);
 	/* EXIT (interrupt) */
 	return rv;
 }

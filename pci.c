@@ -8,6 +8,8 @@
 #include "sysfs.h"
 #include "monitors.h"
 
+MODULE_LICENSE("GPL");
+
 static struct pci_device_id crc_device_ids[] = {
 	{ PCI_DEVICE(CRCDEV_VENDOR_ID, CRCDEV_DEVICE_ID) },
 	{ 0 },
@@ -120,9 +122,6 @@ fail_enable:
 }
 
 // FIXME does this handle every possible path in crc_probe?
-// FIXME swicth to kref to handle hot unplug
-// FIXME removing must be mutually exclusive with ALL calls
-// FIXME removing must wakeup ALL waiting calls before entering remove lock
 static void crc_remove(struct pci_dev *pdev) {
 	struct crc_device* cdev = NULL;
 	printk(KERN_INFO "crcdev: removing PCI device %x:%x:%x.", pdev->vendor,

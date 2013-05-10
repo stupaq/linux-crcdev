@@ -9,6 +9,8 @@
 #include "chrdev.h"
 #include "fileops.h"
 
+MODULE_LICENSE("GPL");
+
 static unsigned int crc_chrdev_major = 0;
 static int crc_chrdev_init_success = 0;
 
