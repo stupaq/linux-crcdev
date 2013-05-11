@@ -78,8 +78,9 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 			goto fail_copy;
 		task->data_count = to_copy;
 		lcount -= to_copy;
-		written += to_copy;
+		buff += to_copy;
 		*offp += to_copy;
+		written += to_copy;
 		/* BEGIN CRITICAL (cdev->dev_lock) */
 		mon_device_lock(cdev, flags);
 		/* There is no concurrent ioctl nor remove has started, we have

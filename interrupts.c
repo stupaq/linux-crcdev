@@ -20,9 +20,11 @@ static __always_inline int cdev_is_pending(struct crc_device *cdev) {
 	/* Do not reorder these under any circumstances */
 	read_pos = ioread32(cdev->bar0 + CRCDEV_FETCH_CMD_READ_POS);
 	status = ioread32(cdev->bar0 + CRCDEV_STATUS);
-	if (!(status & CRCDEV_STATUS_FETCH_DATA))
-		return read_pos != cdev->next_pos;
-	else return cdev_next_cmd_idx(cdev, cdev->next_pos) != read_pos;
+	if (read_pos == cdev->next_pos)
+		return false;
+	if (status & CRCDEV_STATUS_FETCH_DATA)
+		return cdev_next_cmd_idx(cdev, cdev->next_pos) != read_pos;
+	return true;
 }
 
 static __always_inline void cdev_put_command(struct crc_task *task) {
@@ -99,6 +101,7 @@ static void crc_irq_handler_fetch_data(struct crc_device *cdev) {
 			}
 		}
 		list_del(&task->list);
+		crc_task_recycle(task);
 		list_add(&task->list, &cdev->free_tasks);
 		mon_session_free_task(sess);
 		cdev_pending_done(cdev);
@@ -133,7 +136,7 @@ static void crc_irq_handler_cmd_nonfull(struct crc_device *cdev) {
 	/* Session has a context, schedule task */
 	list_del(&task->list);
 	sess->waiting_count--;
-	list_add(&task->list, &cdev->scheduled_tasks);
+	list_add_tail(&task->list, &cdev->scheduled_tasks);
 	sess->scheduled_count++;
 	cdev_put_command(task);
 	/* Enable all */
