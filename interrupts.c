@@ -6,25 +6,29 @@
 MODULE_LICENSE("GPL");
 
 /* Hardware abstraction layer */
-#define circular_next(idx, len)	(((idx) + 1) % (len))
-
-#define cdev_write_pos_get(cdev) \
-	ioread32((cdev)->bar0 + CRCDEV_FETCH_CMD_WRITE_POS)
-#define cdev_write_pos_set(cdev, idx) \
+#define	cdev_next_cmd_idx(cdev, idx) (((idx) + 1) % (CRCDEV_COMMANDS_LENGTH))
+#define	cdev_status(cdev) ioread32((cdev)->bar0 + CRCDEV_STATUS)
+#define	cdev_read_pos(cdev) ioread32((cdev)->bar0 + CRCDEV_FETCH_CMD_READ_POS)
+#define	cdev_write_pos(cdev) ioread32((cdev)->bar0 + CRCDEV_FETCH_CMD_WRITE_POS)
+#define	cdev_write_pos_set(cdev, idx) \
 	iowrite32(idx, (cdev)->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
-#define cdev_is_pending(cdev)	({ \
-		u32 rpos = ioread32((cdev)->bar0 + CRCDEV_FETCH_CMD_READ_POS); \
-		u32 npos = (cdev)->next_pos; \
-		npos != rpos; })
-#define cdev_is_cmd_full(cdev)	({ \
+#define	cdev_is_cmd_full(cdev)	({ \
 		BUILD_BUG_ON(CRCDEV_COMMANDS_LENGTH <= CRCDEV_BUFFERS_COUNT); \
 		0; })
-#define cdev_pending_done(cdev)	do { (cdev)->next_pos = \
-	circular_next((cdev)->next_pos, CRCDEV_COMMANDS_LENGTH); } while(0)
+#define	cdev_pending_done(cdev)	do { (cdev)->next_pos = \
+	cdev_next_cmd_idx(cdev, (cdev)->next_pos); } while(0)
+
+static __always_inline int cdev_is_pending(struct crc_device *cdev) {
+	u32 read_pos = cdev_read_pos(cdev);
+	u32 status = cdev_status(cdev);
+	if (!(status & CRCDEV_STATUS_FETCH_DATA))
+		return read_pos != cdev->next_pos;
+	else return cdev_next_cmd_idx(cdev, cdev->next_pos) != read_pos;
+}
 
 static __always_inline void cdev_put_command(struct crc_task *task) {
 	struct crc_device *cdev = task->session->crc_dev;
-	size_t idx = cdev_write_pos_get(cdev);
+	size_t idx = cdev_write_pos(cdev);
 	struct crc_command *cmd = cdev->cmd_block + idx;
 	size_t ctx = task->session->ctx;
 	cmd->count_ctx = cpu_to_le32((task->data_count & CRCDEV_CMD_COUNT_MASK)
@@ -36,7 +40,7 @@ static __always_inline void cdev_put_command(struct crc_task *task) {
 			le32_to_cpu(cmd->count_ctx) >> CRCDEV_CMD_CTX_SHIFT,
 			le32_to_cpu(cmd->count_ctx) & CRCDEV_CMD_CTX_MASK,
 			le32_to_cpu(cmd->addr));
-	idx = circular_next(idx, CRCDEV_COMMANDS_LENGTH);
+	idx = cdev_next_cmd_idx(cdev, idx);
 	cdev_write_pos_set(cdev, idx);
 }
 
@@ -56,6 +60,7 @@ static __always_inline void cdev_put_context(struct crc_session *sess) {
 			sess->sum);
 }
 
+/* Device status (direct) */
 static __always_inline void cdev_report_status(struct crc_device *cdev) {
 	my_debug("dev %u: enable %u status %u intr %u intr_e %u\n"
 			"               next %u read %u write %u length %u",
