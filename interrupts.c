@@ -5,12 +5,6 @@
 
 MODULE_LICENSE("GPL");
 
-#ifdef CRC_IRQ_DEBUG
-#define my_debug(fmt, args...) printk(KERN_DEBUG "crcdev: " fmt, ## args)
-#else
-#define my_debug(fmt, args...)
-#endif  // CRC_IRQ_DEBUG
-
 /* Hardware abstraction layer */
 #define circular_next(idx, len)	(((idx) + 1) % (len))
 
@@ -35,12 +29,19 @@ static __always_inline void cdev_put_command(struct crc_task *task) {
 			| ((ctx & CRCDEV_CMD_CTX_MASK) <<
 				CRCDEV_CMD_CTX_SHIFT));
 	cmd->addr = cpu_to_le32(task->data_dma);
+	my_debug("irq: cmd: idx %u ctx %u count %u addr %x",
+			idx,
+			le32_to_cpu(cmd->count_ctx) >> CRCDEV_CMD_CTX_SHIFT,
+			le32_to_cpu(cmd->count_ctx) & CRCDEV_CMD_CTX_MASK,
+			le32_to_cpu(cmd->addr));
 	idx = circular_next(idx, CRCDEV_COMMANDS_LENGTH);
 	cdev_set_write_pos(cdev, idx);
 }
 
 static __always_inline void cdev_get_context(struct crc_session *sess) {
 	BUG_ON(sess->ctx < 0 || CRCDEV_CTX_COUNT <= sess->ctx);
+	my_debug("irq: get: ctx %u poly %x sum %x", sess->ctx, sess->poly,
+			sess->sum);
 	sess->poly = ioread32(sess->crc_dev->bar0 + CRCDEV_CRC_POLY(sess->ctx));
 	sess->sum = ioread32(sess->crc_dev->bar0 + CRCDEV_CRC_SUM(sess->ctx));
 }
@@ -49,11 +50,14 @@ static __always_inline void cdev_put_context(struct crc_session *sess) {
 	BUG_ON(sess->ctx < 0 || CRCDEV_CTX_COUNT <= sess->ctx);
 	iowrite32(sess->poly, sess->crc_dev->bar0 + CRCDEV_CRC_POLY(sess->ctx));
 	iowrite32(sess->sum, sess->crc_dev->bar0 + CRCDEV_CRC_SUM(sess->ctx));
+	my_debug("irq: put: ctx %u poly %x sum %x", sess->ctx, sess->poly,
+			sess->sum);
 }
 
 static __always_inline void cdev_report_status(struct crc_device *cdev) {
-	my_debug("enable: %u status: %u intr: %u intr_e: %u\n"
-			"        next: %u read: %u write %u length: %u",
+	my_debug("dev %u: enable %u status %u intr %u intr_e %u\n"
+			"               next %u read %u write %u length %u",
+			cdev->minor,
 			ioread32(cdev->bar0 + CRCDEV_ENABLE),
 			ioread32(cdev->bar0 + CRCDEV_STATUS),
 			ioread32(cdev->bar0 + CRCDEV_INTR),
@@ -96,6 +100,7 @@ static void crc_irq_handler_fetch_data(struct crc_device *cdev) {
 	crc_irq_enable_all(cdev);
 }
 
+// FIXME inverse priorities here
 /* CRITICAL (interrupt) */
 static void crc_irq_handler_cmd_nonfull(struct crc_device *cdev) {
 	struct crc_task *task;

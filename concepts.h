@@ -14,6 +14,12 @@
 #include <asm/page.h>
 #include "crcdev.h"
 
+#ifdef CRC_DEBUG
+#define my_debug(fmt, args...) printk(KERN_DEBUG "crcdev: " fmt, ## args)
+#else
+#define my_debug(fmt, args...)
+#endif  // CRC_DEBUG
+
 // TODO deal with less blocks than exact count
 #define	CRCDEV_BUFFERS_LOWER	8
 #define	CRCDEV_BUFFERS_COUNT	24

@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <assert.h>
 #include "test.h"
 
 int main() {
@@ -25,5 +26,6 @@ int main() {
 	}
 	sum ^= 0xffffffff;
 	printf("%08x\n", sum);
+	assert(sum == 0x352441c2);
 	return 0;
 }

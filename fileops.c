@@ -69,11 +69,14 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		list_del(&task->list);
 		mon_device_unlock(cdev, flags);
 		/* END CRITICAL (cdev->dev_lock) */
+		/* Acquired block must be returned to either free_tasks or
+		 * waiting_tasks before we leave CRITICAL (call_devwide) */
 		crc_task_attach(sess, task);
 		/* This may sleep */
 		to_copy = min(lcount, (size_t) CRCDEV_BUFFER_SIZE);
 		if (copy_from_user(task->data, buff, to_copy))
 			goto fail_copy;
+		task->data_count = to_copy;
 		lcount -= to_copy;
 		written += to_copy;
 		*offp += to_copy;
@@ -92,6 +95,12 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 	/* EXIT (call_devwide) */
 	return written;
 fail_copy:
+	/* Return acquired block */
+	/* BEGIN CRITICAL (cdev->dev_lock) */
+	mon_device_lock(cdev, flags);
+	list_add(&task->list, &cdev->free_tasks);
+	mon_device_unlock(cdev, flags);
+	/* END CRITICAL (cdev->dev_lock) */
 	mon_session_call_devwide_exit(cdev, sess);
 	/* EXIT (call_devwide) */
 	return -EFAULT;
@@ -109,12 +118,13 @@ fail_call_devwide_enter:
  * called after write but before ioctl(CRCDEV_IOCTL_GET_RESULT) */
 /* CRITICAL (call) */
 static int crc_ioctl_set_params(struct crc_session *sess, void __user * argp) {
-	struct crcdev_ioctl_set_params params;
+	struct crcdev_ioctl_set_params params = { 0, 0 };
 	if (copy_from_user(&params, argp, sizeof(params)))
 		goto fail_copy;
-	/* This can corrupt computation */
-	sess->poly = params.sum;
+	/* This can corrupt concurrent computation */
+	sess->poly = params.poly;
 	sess->sum = params.sum;
+	my_debug("set_params: poly %x sum %x", params.poly, params.sum);
 	return 0;
 fail_copy:
 	return -EFAULT;
@@ -123,7 +133,7 @@ fail_copy:
 /* CRITICAL (call) */
 static int crc_ioctl_get_result(struct crc_session *sess, void __user * argp) {
 	int rv;
-	struct crcdev_ioctl_get_result result;
+	struct crcdev_ioctl_get_result result = { 0 };
 	/* Wait for all tasks to complete, there is no concurrent write (no one
 	 * can reinitialize this completion) */
 	if ((rv = mon_session_tasks_wait_interruptible(sess)))
@@ -132,6 +142,7 @@ static int crc_ioctl_get_result(struct crc_session *sess, void __user * argp) {
 	WARN_ON(sess->waiting_count > 0);
 	/* There is no waiting tasks nor concurrent write */
 	result.sum = sess->sum;
+	my_debug("get_result: sum %x", result.sum);
 	if (copy_to_user(argp, &result, sizeof(result)))
 		goto fail_copy;
 	return rv;
@@ -157,6 +168,7 @@ static long crc_fileops_ioctl(struct file *filp, unsigned int cmd, unsigned long
 		rv = crc_ioctl_get_result(sess, argp);
 		break;
 	default:
+		printk(KERN_WARNING "crcdev: unrecognized ioctl %u", cmd);
 		rv = -EINVAL;
 	}
 	mon_session_call_exit(sess);

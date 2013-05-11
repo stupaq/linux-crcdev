@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 
 char buf[0x400000];
 
@@ -46,6 +47,7 @@ int main() {
 		if (nfree == NMUX)
 			break;
 	}
+	int failures = 0;
 	for (i = 0; i < NMUX; i++) {
 		uint32_t sum;
 		if (crcdev_ioctl_get_result(fd[i], &sum)) {
@@ -54,6 +56,8 @@ int main() {
 		}
 		sum ^= 0xffffffff;
 		printf("%08x\n", sum);
+		failures += (sum != 0xc8402732);
 	}
+	assert(failures == 0);
 	return 0;
 }

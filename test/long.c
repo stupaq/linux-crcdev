@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <assert.h>
 
 char buf[0x400000];
 
@@ -27,5 +28,6 @@ int main() {
 	}
 	sum ^= 0xffffffff;
 	printf("%08x\n", sum);
+	assert(sum == 0xc8402732);
 	return 0;
 }
