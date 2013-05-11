@@ -107,9 +107,9 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	crc_prepare_fetch_cmd(cdev);
 	/* START (ready) */
 	mon_device_ready_start(cdev);
-	/* Enable ALL interrupts ATOMICALLY, device will run after this and idle
-	 * immediately (there is no pending commands yet) */
-	crc_irq_enable_all(cdev);
+	/* Enable interrupts, device will run after this and idle immediately
+	 * (there is no pending commands yet) */
+	crc_irq_enable(cdev);
 	/* After registering char device someone can use it */
 	if ((rv = crc_chrdev_add(pdev, cdev)))
 		goto fail;

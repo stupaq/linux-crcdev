@@ -106,8 +106,8 @@ static void crc_irq_handler_fetch_data(struct crc_device *cdev) {
 		mon_session_free_task(sess);
 		cdev_pending_done(cdev);
 	}
-	/* Enable all */
-	crc_irq_enable_all(cdev);
+	/* Enable nonfull */
+	crc_irq_enable(cdev);
 }
 
 /* CRITICAL (interrupt) */
@@ -115,54 +115,50 @@ static void crc_irq_handler_cmd_nonfull(struct crc_device *cdev) {
 	struct crc_task *task;
 	struct crc_session *sess;
 	/* Interrupt priorities: FETCH_DATA served */
-	if (cdev_is_cmd_full(cdev))
-		goto cmd_block_full;
-	if (list_empty(&cdev->waiting_tasks))
-		goto no_waiting_task;
-	task = list_first_entry(&cdev->waiting_tasks, struct crc_task, list);
-	sess = task->session;
-	if (CRCDEV_SESSION_NOCTX == sess->ctx) {
-		/* Find and allocate context */
-		int ctx = find_first_zero_bit(cdev->contexts_map,
-				CRCDEV_CTX_COUNT);
-		if (ctx < 0 || CRCDEV_CTX_COUNT <= ctx)
-			goto no_free_context;
-		set_bit(ctx, cdev->contexts_map);
-		/* Sync device with session */
-		sess->ctx = ctx;
-		cdev_put_context(sess);
+	while (!list_empty(&cdev->waiting_tasks)) {
+		if (cdev_is_cmd_full(cdev))
+			goto cmd_block_full;
+		task = list_first_entry(&cdev->waiting_tasks, struct crc_task,
+				list);
+		sess = task->session;
+		if (CRCDEV_SESSION_NOCTX == sess->ctx) {
+			/* Find and allocate context */
+			int ctx = find_first_zero_bit(cdev->contexts_map,
+					CRCDEV_CTX_COUNT);
+			if (ctx < 0 || CRCDEV_CTX_COUNT <= ctx)
+				goto no_free_context;
+			set_bit(ctx, cdev->contexts_map);
+			/* Sync device with session */
+			sess->ctx = ctx;
+			cdev_put_context(sess);
+		}
+		BUG_ON(sess->ctx < 0 || CRCDEV_CTX_COUNT <= sess->ctx);
+		/* Session has a context, schedule task */
+		list_del(&task->list);
+		sess->waiting_count--;
+		list_add_tail(&task->list, &cdev->scheduled_tasks);
+		sess->scheduled_count++;
+		cdev_put_command(task);
 	}
-	BUG_ON(sess->ctx < 0 || CRCDEV_CTX_COUNT <= sess->ctx);
-	/* Session has a context, schedule task */
-	list_del(&task->list);
-	sess->waiting_count--;
-	list_add_tail(&task->list, &cdev->scheduled_tasks);
-	sess->scheduled_count++;
-	cdev_put_command(task);
-	/* Enable all */
-	crc_irq_enable_all(cdev);
+	/* We've run out of tasks */
+	crc_irq_disable_nonfull(cdev);
 	return;
 no_free_context:
 	my_debug("irq: no free context");
-	crc_irq_cmd_nonfull(cdev, 0);
-	crc_irq_cmd_idle(cdev, 1);
-	return;
-no_waiting_task:
-	my_debug("irq: no waiting task");
-	crc_irq_cmd_nonfull(cdev, 0);
+	crc_irq_disable_nonfull(cdev);
 	return;
 cmd_block_full:
 	my_debug("irq: cmd block full ");
-	crc_irq_cmd_nonfull(cdev, 0);
-	crc_irq_cmd_idle(cdev, 1);
+	crc_irq_disable_nonfull(cdev);
 	return;
 }
 
 /* CRITICAL (interrupt) */
 static void crc_irq_handler_cmd_idle(struct crc_device *cdev) {
 	/* Interrupt priorities: FETCH_DATA and CMD_NONFULL served */
-	// TODO is this useless?
-	crc_irq_cmd_idle(cdev, 0);
+	printk(KERN_WARNING "crcdev: irq: cmd_idle fired");
+	/* Enable only necessary interrupts (not this one) */
+	crc_irq_enable(cdev);
 }
 
 irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
