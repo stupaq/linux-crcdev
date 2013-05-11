@@ -1,7 +1,6 @@
 #include <linux/pci.h>
 #include "crcdev.h"
 #include "pci.h"
-#include "errors.h"
 #include "concepts.h"
 #include "interrupts.h"
 #include "chrdev.h"
@@ -95,6 +94,7 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	/* Setup interrupts, device is ready and waiting after this step */
 	if (pdev->irq == 0) {
 		printk(KERN_INFO "crcdev: device cannot generate interrupts");
+		rv = -ENODEV;
 		goto fail;
 	}
 	/* Interrupt handlers share crc_device reference with pci module */
@@ -120,12 +120,12 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 fail:
 	pci_set_drvdata(pdev, cdev);
 	crc_remove(pdev);
-	return ERROR(rv);
+	return rv;
 fail_request:
 	pci_disable_device(pdev);
-	return ERROR(rv);
+	return rv;
 fail_enable:
-	return ERROR(rv);
+	return rv;
 }
 
 // FIXME does this handle every possible path in crc_probe?

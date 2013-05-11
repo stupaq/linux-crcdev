@@ -1,6 +1,5 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include "errors.h"
 #include "chrdev.h"
 #include "sysfs.h"
 #include "pci.h"
@@ -31,11 +30,10 @@ static int __init init_crcdev(void)
 		goto fail;
 	if ((rv = crc_pci_init()))
 		goto fail;
-
 	return rv;
 fail:
 	cleanup_crcdev();
-	return ERROR(rv);
+	return rv;
 }
 
 module_init(init_crcdev);

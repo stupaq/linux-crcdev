@@ -4,7 +4,6 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/compiler.h>
-#include "errors.h"
 #include "pci.h"
 #include "chrdev.h"
 #include "fileops.h"
@@ -47,7 +46,7 @@ int __must_check crc_chrdev_add(struct pci_dev *pdev, struct crc_device *dev) {
 	set_bit(CRCDEV_STATUS_CHRDEV, &dev->status);
 	return rv;
 fail_add:
-	return ERROR(rv);
+	return rv;
 }
 
 void crc_chrdev_del(struct pci_dev *pdev, struct crc_device *dev) {

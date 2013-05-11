@@ -1,9 +1,11 @@
 #ifndef MONITORS_H_
 #define MONITORS_H_
 
-#include "errors.h"
 #include "concepts.h"
 #include "pci.h"
+
+#define crc_error_hot_unplug() printk(KERN_WARNING \
+		"crcdev: device removed while there was pending syscall")
 
 #define mon_device_lock(cdev, flags) \
 	spin_lock_irqsave(&(cdev)->dev_lock, flags);
