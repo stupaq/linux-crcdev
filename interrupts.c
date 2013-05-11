@@ -7,11 +7,7 @@ MODULE_LICENSE("GPL");
 
 /* Hardware abstraction layer */
 #define	cdev_next_cmd_idx(cdev, idx) (((idx) + 1) % (CRCDEV_COMMANDS_LENGTH))
-#define	cdev_status(cdev) ioread32((cdev)->bar0 + CRCDEV_STATUS)
-#define	cdev_read_pos(cdev) ioread32((cdev)->bar0 + CRCDEV_FETCH_CMD_READ_POS)
 #define	cdev_write_pos(cdev) ioread32((cdev)->bar0 + CRCDEV_FETCH_CMD_WRITE_POS)
-#define	cdev_write_pos_set(cdev, idx) \
-	iowrite32(idx, (cdev)->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
 #define	cdev_is_cmd_full(cdev)	({ \
 		BUILD_BUG_ON(CRCDEV_COMMANDS_LENGTH <= CRCDEV_BUFFERS_COUNT); \
 		0; })
@@ -19,8 +15,11 @@ MODULE_LICENSE("GPL");
 	cdev_next_cmd_idx(cdev, (cdev)->next_pos); } while(0)
 
 static __always_inline int cdev_is_pending(struct crc_device *cdev) {
-	u32 read_pos = cdev_read_pos(cdev);
-	u32 status = cdev_status(cdev);
+	u32 read_pos;
+	u32 status;
+	/* Do not reorder these under any circumstances */
+	read_pos = ioread32(cdev->bar0 + CRCDEV_FETCH_CMD_READ_POS);
+	status = ioread32(cdev->bar0 + CRCDEV_STATUS);
 	if (!(status & CRCDEV_STATUS_FETCH_DATA))
 		return read_pos != cdev->next_pos;
 	else return cdev_next_cmd_idx(cdev, cdev->next_pos) != read_pos;
@@ -41,7 +40,8 @@ static __always_inline void cdev_put_command(struct crc_task *task) {
 			le32_to_cpu(cmd->count_ctx) & CRCDEV_CMD_CTX_MASK,
 			le32_to_cpu(cmd->addr));
 	idx = cdev_next_cmd_idx(cdev, idx);
-	cdev_write_pos_set(cdev, idx);
+	iowrite32(idx, cdev->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
+	mmiowb();
 }
 
 static __always_inline void cdev_get_context(struct crc_session *sess) {
@@ -56,6 +56,7 @@ static __always_inline void cdev_put_context(struct crc_session *sess) {
 	BUG_ON(sess->ctx < 0 || CRCDEV_CTX_COUNT <= sess->ctx);
 	iowrite32(sess->poly, sess->crc_dev->bar0 + CRCDEV_CRC_POLY(sess->ctx));
 	iowrite32(sess->sum, sess->crc_dev->bar0 + CRCDEV_CRC_SUM(sess->ctx));
+	mmiowb();
 	my_debug("irq: put: ctx %u poly %x sum %x", sess->ctx, sess->poly,
 			sess->sum);
 }
@@ -75,13 +76,12 @@ static __always_inline void cdev_report_status(struct crc_device *cdev) {
 			ioread32(cdev->bar0 + CRCDEV_FETCH_CMD_SIZE));
 }
 
-/* Handlers can inherit critical section from each other */
 /* CRITICAL (interrupt) */
 static void crc_irq_handler_fetch_data(struct crc_device *cdev) {
 	struct crc_task *task;
 	struct crc_session *sess;
-	/* Handler must ACK this interrupt by itself, we do this immediately as
-	 * we will handle all pending tasks in loop */
+	/* This interrupt must be ACKed before we start processing
+	 * pending tasks, do not reorder these */
 	crc_irq_fetch_data_ack(cdev);
 	while (cdev_is_pending(cdev)) {
 		task = list_first_entry(&cdev->scheduled_tasks, struct crc_task,
@@ -107,17 +107,13 @@ static void crc_irq_handler_fetch_data(struct crc_device *cdev) {
 	crc_irq_enable_all(cdev);
 }
 
-// FIXME inverse priorities here
 /* CRITICAL (interrupt) */
 static void crc_irq_handler_cmd_nonfull(struct crc_device *cdev) {
 	struct crc_task *task;
 	struct crc_session *sess;
 	/* Interrupt priorities: FETCH_DATA served */
-	if (cdev_is_pending(cdev) || cdev_is_cmd_full(cdev)) {
-		my_debug("irq: fetch data (lost) ");
-		crc_irq_handler_fetch_data(cdev);
-		return;
-	}
+	if (cdev_is_cmd_full(cdev))
+		goto cmd_block_full;
 	if (list_empty(&cdev->waiting_tasks))
 		goto no_waiting_task;
 	task = list_first_entry(&cdev->waiting_tasks, struct crc_task, list);
@@ -152,16 +148,17 @@ no_waiting_task:
 	my_debug("irq: no waiting task");
 	crc_irq_cmd_nonfull(cdev, 0);
 	return;
+cmd_block_full:
+	my_debug("irq: cmd block full ");
+	crc_irq_cmd_nonfull(cdev, 0);
+	crc_irq_cmd_idle(cdev, 1);
+	return;
 }
 
 /* CRITICAL (interrupt) */
 static void crc_irq_handler_cmd_idle(struct crc_device *cdev) {
 	/* Interrupt priorities: FETCH_DATA and CMD_NONFULL served */
-	if (cdev_is_pending(cdev)) {
-		my_debug("irq: fetch data (lost) ");
-		crc_irq_handler_fetch_data(cdev);
-		return;
-	}
+	// TODO is this useless?
 	crc_irq_cmd_idle(cdev, 0);
 }
 

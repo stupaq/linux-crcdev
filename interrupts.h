@@ -10,11 +10,15 @@
 
 irqreturn_t crc_irq_dispatcher(int, void *);
 
-#define crc_irq_enable_all(cdev) \
+static __always_inline void crc_irq_enable_all(struct crc_device *cdev) {
 	iowrite32(CRCDEV_INTR_ALL, (cdev)->bar0 + CRCDEV_INTR_ENABLE);
+	mmiowb();
+}
 
-#define crc_irq_fetch_data_ack(cdev) \
+static __always_inline void crc_irq_fetch_data_ack(struct crc_device *cdev) {
 	iowrite32(0, (cdev)->bar0 + CRCDEV_FETCH_DATA_INTR_ACK);
+	mmiowb();
+}
 
 /* UNSAFE */
 static __always_inline
@@ -23,6 +27,7 @@ void crc_irq_cmd_nonfull(struct crc_device *cdev, char enable) {
 	if (enable) intr |= CRCDEV_INTR_FETCH_CMD_NONFULL;
 	else intr &= ~CRCDEV_INTR_FETCH_CMD_NONFULL;
 	iowrite32(intr, cdev->bar0 + CRCDEV_INTR_ENABLE);
+	mmiowb();
 }
 
 /* UNSAFE */
@@ -32,6 +37,7 @@ void crc_irq_cmd_idle(struct crc_device *cdev, char enable) {
 	if (enable) intr |= CRCDEV_INTR_FETCH_CMD_IDLE;
 	else intr &= ~CRCDEV_INTR_FETCH_CMD_IDLE;
 	iowrite32(intr, cdev->bar0 + CRCDEV_INTR_ENABLE);
+	mmiowb();
 }
 
 #endif  // INTERRUPTS_H_

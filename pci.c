@@ -49,6 +49,7 @@ void crc_reset_device(void __iomem* bar0) {
 	iowrite32(0, bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
 	/* Clear FETCH_DATA interrupt */
 	iowrite32(0, bar0 + CRCDEV_FETCH_DATA_INTR_ACK);
+	mmiowb();
 }
 
 /* unsafe */
@@ -58,6 +59,7 @@ static void crc_prepare_fetch_cmd(struct crc_device *cdev) {
 	/* Enable fetch cmd and fetch data (there are no commands) */
 	iowrite32(CRCDEV_ENABLE_FETCH_DATA | CRCDEV_ENABLE_FETCH_CMD,
 			cdev->bar0 + CRCDEV_ENABLE);
+	mmiowb();
 }
 
 static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
