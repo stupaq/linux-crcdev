@@ -5,6 +5,12 @@
 
 MODULE_LICENSE("GPL");
 
+#ifdef CRC_IRQ_DEBUG
+#define my_debug(fmt, args...) printk(KERN_DEBUG "crcdev: " fmt, ## args)
+#else
+#define my_debug(fmt, args...)
+#endif  // CRC_IRQ_DEBUG
+
 /* Hardware abstraction layer */
 #define circular_next(idx, len)	(((idx) + 1) % (len))
 
@@ -17,8 +23,8 @@ MODULE_LICENSE("GPL");
 #define cdev_is_cmd_full(cdev)	({ \
 		BUILD_BUG_ON(CRCDEV_COMMANDS_LENGTH <= CRCDEV_BUFFERS_COUNT); \
 		0; })
-#define cdev_pending_done(cdev)	{ (cdev)->next_pos = \
-	circular_next((cdev)->next_pos, CRCDEV_COMMANDS_LENGTH); }
+#define cdev_pending_done(cdev)	do { (cdev)->next_pos = \
+	circular_next((cdev)->next_pos, CRCDEV_COMMANDS_LENGTH); } while(0)
 
 static __always_inline void cdev_put_command(struct crc_task *task) {
 	struct crc_device *cdev = task->session->crc_dev;
@@ -46,8 +52,8 @@ static __always_inline void cdev_put_context(struct crc_session *sess) {
 }
 
 static __always_inline void cdev_report_status(struct crc_device *cdev) {
-	printk(KERN_INFO "crcdev: enable: %u status: %u intr: %u intr_e: %u\n"
-			 "        next: %u read: %u write %u length: %u",
+	my_debug("enable: %u status: %u intr: %u intr_e: %u\n"
+			"        next: %u read: %u write %u length: %u",
 			ioread32(cdev->bar0 + CRCDEV_ENABLE),
 			ioread32(cdev->bar0 + CRCDEV_STATUS),
 			ioread32(cdev->bar0 + CRCDEV_INTR),
@@ -96,7 +102,7 @@ static void crc_irq_handler_cmd_nonfull(struct crc_device *cdev) {
 	struct crc_session *sess;
 	/* Interrupt priorities: FETCH_DATA served */
 	if (cdev_is_pending(cdev) || cdev_is_cmd_full(cdev)) {
-		printk(KERN_INFO "crcdev: irq: fetch data (lost) ");
+		my_debug("irq: fetch data (lost) ");
 		crc_irq_handler_fetch_data(cdev);
 		return;
 	}
@@ -126,12 +132,12 @@ static void crc_irq_handler_cmd_nonfull(struct crc_device *cdev) {
 	crc_irq_enable_all(cdev);
 	return;
 no_free_context:
-	printk(KERN_INFO "crcdev: irq: no free context");
+	my_debug("irq: no free context");
 	crc_irq_cmd_nonfull(cdev, 0);
 	crc_irq_cmd_idle(cdev, 1);
 	return;
 no_waiting_task:
-	printk(KERN_INFO "crcdev: irq: no waiting task");
+	my_debug("irq: no waiting task");
 	crc_irq_cmd_nonfull(cdev, 0);
 	return;
 }
@@ -140,7 +146,7 @@ no_waiting_task:
 static void crc_irq_handler_cmd_idle(struct crc_device *cdev) {
 	/* Interrupt priorities: FETCH_DATA and CMD_NONFULL served */
 	if (cdev_is_pending(cdev)) {
-		printk(KERN_INFO "crcdev: irq: fetch data (lost) ");
+		my_debug("irq: fetch data (lost) ");
 		crc_irq_handler_fetch_data(cdev);
 		return;
 	}
@@ -157,22 +163,21 @@ irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
 	/* ENTER (interrupt) */
 	mon_device_lock(cdev, flags);
 	if (test_bit(CRCDEV_STATUS_READY, &cdev->status)) {
-		// TODO remove debug printks
 		cdev_report_status(cdev);
 		/* Check if it was our device and which interrupt fired */
 		intr = ioread32(cdev->bar0 + CRCDEV_INTR);
 		intr &= ioread32(cdev->bar0 + CRCDEV_INTR_ENABLE);
 		/* Priorities here are important */
 		if (intr & CRCDEV_INTR_FETCH_DATA) {
-			printk(KERN_INFO "crcdev: irq: fetch_data");
+			my_debug("irq: fetch_data");
 			crc_irq_handler_fetch_data(cdev);
 			rv = IRQ_HANDLED;
 		} else if (intr & CRCDEV_INTR_FETCH_CMD_NONFULL) {
-			printk(KERN_INFO "crcdev: irq: cmd_nonfull");
+			my_debug("irq: cmd_nonfull");
 			crc_irq_handler_cmd_nonfull(cdev);
 			rv = IRQ_HANDLED;
 		} else if (intr & CRCDEV_INTR_FETCH_CMD_IDLE) {
-			printk(KERN_INFO "crcdev: irq: cmd_idle");
+			my_debug("irq: cmd_idle");
 			crc_irq_handler_cmd_idle(cdev);
 			rv = IRQ_HANDLED;
 		} else {
@@ -189,6 +194,6 @@ irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
 	 * from our device */
 	mon_device_unlock(cdev, flags);
 	/* EXIT (interrupt) */
-	printk(KERN_INFO "crcdev: irq: exit");
+	my_debug("irq: exit");
 	return rv;
 }
