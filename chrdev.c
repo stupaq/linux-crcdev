@@ -21,7 +21,7 @@ int __must_check crc_chrdev_init(void) {
 		return rv;
 	crc_chrdev_major = MAJOR(dev);
 	crc_chrdev_init_success = 1;
-	printk(KERN_INFO "crcdev: chrdev major: %d", crc_chrdev_major);
+	printk(KERN_INFO "crcdev: chrdev major: %u", crc_chrdev_major);
 	return rv;
 }
 
