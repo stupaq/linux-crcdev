@@ -1,13 +1,23 @@
+#include <asm/atomic.h>
 #include "concepts.h"
 #include "monitors.h"
 #include "chrdev.h"
 
 MODULE_LICENSE("GPL");
 
+/* GC statistics */
+static struct {
+	atomic_t devices;
+	atomic_t sessions;
+	atomic_t tasks;
+	atomic_t dma_blocks;
+} crc_gc;
+
 /* crc_session */
 struct crc_session * __must_check crc_session_alloc(struct crc_device *cdev) {
 	struct crc_session *sess;
 	if ((sess = kzalloc(sizeof(*sess), GFP_KERNEL))) {
+		atomic_inc(&crc_gc.sessions);
 		sess->crc_dev = cdev;
 		mutex_init(&sess->call_lock);
 		init_completion(&sess->ioctl_comp);
@@ -20,6 +30,7 @@ struct crc_session * __must_check crc_session_alloc(struct crc_device *cdev) {
 void crc_session_free(struct crc_session *sess) {
 	if (!sess) return;
 	kfree(sess); sess = NULL;
+	atomic_dec(&crc_gc.sessions);
 }
 
 /* crc_device */
@@ -33,6 +44,7 @@ struct crc_device * __must_check crc_device_alloc(void) {
 	/* Create device structure */
 	if (!(cdev = kzalloc(sizeof(*cdev), GFP_KERNEL)))
 		goto fail_alloc;
+	atomic_inc(&crc_gc.devices);
 	/* Obtain minor */
 	mutex_lock(&crc_device_minors_lock);
 	idx = find_first_zero_bit(crc_device_minors, CRCDEV_DEVS_COUNT);
@@ -60,6 +72,7 @@ struct crc_device * __must_check crc_device_alloc(void) {
 	return cdev;
 fail_minor:
 	kfree(cdev); cdev = NULL;
+	atomic_dec(&crc_gc.devices);
 fail_alloc:
 	return NULL;
 }
@@ -73,6 +86,7 @@ static void crc_device_free_kref(struct kref *ref) {
 	crc_device_minors_mapping[idx] = NULL;
 	/* Free mem */
 	kfree(cdev); cdev = NULL;
+	atomic_dec(&crc_gc.devices);
 }
 
 /* Note that the initial reference to crc_device is held by pci module,
@@ -106,17 +120,21 @@ int __must_check crc_device_dma_alloc(struct pci_dev *pdev,
 			&cdev->cmd_block_dma, GFP_KERNEL);
 	if (!cdev->cmd_block)
 		goto fail;
+	atomic_inc(&crc_gc.dma_blocks);
 	for (count = 0; count < CRCDEV_BUFFERS_COUNT; count++) {
 		// TODO deal with smaller number of blocks too
 		if (!(task = kzalloc(sizeof(*task), GFP_KERNEL)))
 			goto fail;
+		atomic_inc(&crc_gc.tasks);
 		task->data = dma_alloc_coherent(&pdev->dev, CRCDEV_BUFFER_SIZE,
 				&task->data_dma, GFP_KERNEL);
 		if (!task->data) {
 			/* Free partially created task */
 			kfree(task); task = NULL;
+			atomic_dec(&crc_gc.tasks);
 			goto fail;
 		}
+		atomic_inc(&crc_gc.dma_blocks);
 		list_add(&task->list, &cdev->free_tasks);
 	}
 	sema_init(&cdev->free_tasks_wait, count);
@@ -135,6 +153,7 @@ void crc_device_dma_free(struct pci_dev *pdev, struct crc_device *cdev) {
 		dma_free_coherent(&pdev->dev, sizeof(*cdev->cmd_block) *
 				CRCDEV_COMMANDS_LENGTH, cdev->cmd_block,
 				cdev->cmd_block_dma);
+		atomic_dec(&crc_gc.dma_blocks);
 		cdev->cmd_block = NULL;
 	}
 	INIT_LIST_HEAD(&tmp_list);
@@ -148,16 +167,34 @@ void crc_device_dma_free(struct pci_dev *pdev, struct crc_device *cdev) {
 	list_for_each_entry_safe(task, tmp, &tmp_list, list) {
 		dma_free_coherent(&pdev->dev, CRCDEV_BUFFER_SIZE, task->data,
 				task->data_dma);
+		atomic_dec(&crc_gc.dma_blocks);
 		kfree(task); task = NULL;
+		atomic_dec(&crc_gc.tasks);
 	}
 }
 
 /* Common */
 int crc_concepts_init(void) {
+	/* Minor allocation */
 	bitmap_zero(crc_device_minors, CRCDEV_DEVS_COUNT);
+	/* Initialize GC stats */
+	atomic_set(&crc_gc.devices, 0);
+	atomic_set(&crc_gc.sessions, 0);
+	atomic_set(&crc_gc.tasks, 0);
+	atomic_set(&crc_gc.dma_blocks, 0);
 	return 0;
 }
 
 void crc_concepts_exit(void) {
-	/* nop */
+	int devices = atomic_read(&crc_gc.devices),
+	    sessions = atomic_read(&crc_gc.sessions),
+	    tasks = atomic_read(&crc_gc.tasks),
+	    dma_blocks = atomic_read(&crc_gc.dma_blocks);
+	if (devices || sessions || tasks || dma_blocks) {
+		printk(KERN_ERR "crcdev: concepts: not all objects collected: "
+			"devices %d, sessions %d, tasks %d, dma_blocks %d",
+			devices, sessions, tasks, dma_blocks);
+	} else {
+		printk(KERN_INFO "crcdev: concepts: gc successful");
+	}
 }
