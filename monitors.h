@@ -126,9 +126,9 @@ int mon_session_tasks_wait(struct crc_session *sess) {
 	return 0;
 }
 
+/* OK */
 static __always_inline
 void mon_device_ready_start(struct crc_device *cdev) {
-	set_bit(CRCDEV_STATUS_IRQ, &cdev->status);
 	set_bit(CRCDEV_STATUS_READY, &cdev->status);
 	/* END CRITICAL (cdev->dev_lock) - no one alive new about our device */
 }

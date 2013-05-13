@@ -55,6 +55,10 @@ void crc_reset_device(void __iomem* bar0) {
 /* unsafe */
 static void crc_prepare_fetch_cmd(struct crc_device *cdev) {
 	iowrite32(cdev->cmd_block_dma, cdev->bar0 + CRCDEV_FETCH_CMD_ADDR);
+	/* Just like the initial value of  cdev->next_pos */
+	iowrite32(0, cdev->bar0 + CRCDEV_FETCH_CMD_READ_POS);
+	iowrite32(0, cdev->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
+	/* This is one more than actual number of cmds that can fit in */
 	iowrite32(CRCDEV_COMMANDS_LENGTH, cdev->bar0 + CRCDEV_FETCH_CMD_SIZE);
 	/* Enable fetch cmd and fetch data (there are no commands) */
 	iowrite32(CRCDEV_ENABLE_FETCH_DATA | CRCDEV_ENABLE_FETCH_CMD,
@@ -86,6 +90,7 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	crc_reset_device(cdev->bar0);
 	/* Device won't try to do anything */
 	pci_set_master(pdev);
+	// TODO Q: check 64 bit mask if sizeof(dma_addr_t) > sizeof(u32)?
 	if ((rv = pci_set_dma_mask(pdev, DMA_BIT_MASK(CRCDEV_DMA_BITS))))
 		goto fail;
 	if ((rv = pci_set_consistent_dma_mask(pdev,
@@ -103,6 +108,7 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	if ((rv = request_irq(pdev->irq, crc_irq_dispatcher, IRQF_SHARED,
 					CRCDEV_PCI_NAME, cdev)))
 		goto fail;
+	set_bit(CRCDEV_STATUS_IRQ, &cdev->status);
 	/* Setup cmd block */
 	crc_prepare_fetch_cmd(cdev);
 	/* START (ready) */
@@ -124,13 +130,13 @@ fail:
 	crc_remove(pdev);
 	return rv;
 fail_request:
+	/* This is refcounted, we won't screw up other sessions with device */
 	pci_disable_device(pdev);
 	return rv;
 fail_enable:
 	return rv;
 }
 
-// FIXME does this handle every possible path in crc_probe?
 static void crc_remove(struct pci_dev *pdev) {
 	struct crc_device* cdev = NULL;
 	printk(KERN_INFO "crcdev: removing PCI device %x:%x:%x.", pdev->vendor,
