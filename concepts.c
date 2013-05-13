@@ -109,7 +109,7 @@ int __must_check crc_device_dma_alloc(struct pci_dev *pdev,
 	if (!cdev->cmd_block)
 		goto fail;
 	for (count = 0; count < CRCDEV_BUFFERS_COUNT; count++) {
-		// FIXME deal with smaller number of blocks too
+		// TODO deal with smaller number of blocks too
 		if (!(task = kzalloc(sizeof(*task), GFP_KERNEL)))
 			goto fail;
 		task->data = dma_alloc_coherent(&pdev->dev, CRCDEV_BUFFER_SIZE,

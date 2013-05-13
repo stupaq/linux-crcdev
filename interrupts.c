@@ -195,7 +195,7 @@ irqreturn_t crc_irq_dispatcher(int irq, void *dev_id) {
 	} else {
 		/* We are not sure this time, if it was our device then it's OK,
 		 * otherwise proper device will raise this again */
-		rv = IRQ_HANDLED; // FIXME
+		rv = IRQ_HANDLED;
 	}
 	/* If device is not ready then crc_remove has been called and interrupts
 	 * are already disabled, this interrupt won't be raised again if it came

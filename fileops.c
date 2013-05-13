@@ -108,11 +108,13 @@ fail_copy:
 fail_reserve_task:
 	mon_session_call_devwide_exit(cdev, sess);
 	/* EXIT (call_devwide) */
-	// FIXME what to return when written > 0 and -EINTR?
-	return rv;
+	/* Report error (or signal) only if haven't written anything */
+	if (written == 0) return rv;
+	else return written;
 fail_call_devwide_enter:
-	// FIXME what to return when written > 0 and -EINTR?
-	return rv;
+	/* Report error (or signal) only if haven't written anything */
+	if (written == 0) return rv;
+	else return written;
 }
 
 /* ioctl(CRCDEV_IOCTL_SET_PARAMS) affects crc computation in an undefined way if
