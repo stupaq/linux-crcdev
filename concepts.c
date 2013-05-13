@@ -58,10 +58,9 @@ struct crc_device * __must_check crc_device_alloc(void) {
 	/* Reference counting */
 	kref_init(&cdev->refc);
 	return cdev;
-fail_alloc:
-	return NULL;
 fail_minor:
 	kfree(cdev); cdev = NULL;
+fail_alloc:
 	return NULL;
 }
 
@@ -69,7 +68,7 @@ fail_minor:
 static void crc_device_free_kref(struct kref *ref) {
 	struct crc_device *cdev = container_of(ref, struct crc_device, refc);
 	int idx = cdev->minor - CRCDEV_BASE_MINOR;
-	/* Relese minor after removing device */
+	/* Relese minor */
 	clear_bit(idx, crc_device_minors);
 	crc_device_minors_mapping[idx] = NULL;
 	/* Free mem */
@@ -90,9 +89,7 @@ struct crc_device * __must_check crc_device_get(unsigned int minor) {
 }
 
 void crc_device_put(struct crc_device *cdev) {
-	int idx;
 	if (!cdev) return;
-	idx = cdev->minor - CRCDEV_BASE_MINOR;
 	mutex_lock(&crc_device_minors_lock);
 	kref_put(&cdev->refc, crc_device_free_kref);
 	mutex_unlock(&crc_device_minors_lock);
@@ -103,6 +100,7 @@ int __must_check crc_device_dma_alloc(struct pci_dev *pdev,
 		struct crc_device *cdev) {
 	int count;
 	struct crc_task *task;
+	BUILD_BUG_ON(sizeof(*(cdev->cmd_block)) != CRCDEV_CMD_SIZE);
 	cdev->cmd_block = dma_alloc_coherent(&pdev->dev,
 			sizeof(*(cdev->cmd_block)) * CRCDEV_COMMANDS_LENGTH,
 			&cdev->cmd_block_dma, GFP_KERNEL);

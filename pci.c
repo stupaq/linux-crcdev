@@ -44,7 +44,6 @@ void crc_reset_device(void __iomem* bar0) {
 	/* Set empty FETCH_DATA buffer */
 	iowrite32(0, bar0 + CRCDEV_FETCH_DATA_COUNT);
 	/* Set empty FETCH_CMD buffer */
-	/* Just like the initial value of  cdev->next_pos */
 	iowrite32(0, bar0 + CRCDEV_FETCH_CMD_READ_POS);
 	iowrite32(0, bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
 	/* Clear FETCH_DATA interrupt */
@@ -56,8 +55,8 @@ void crc_reset_device(void __iomem* bar0) {
 static void crc_prepare_fetch_cmd(struct crc_device *cdev) {
 	iowrite32(cdev->cmd_block_dma, cdev->bar0 + CRCDEV_FETCH_CMD_ADDR);
 	/* Just like the initial value of  cdev->next_pos */
-	iowrite32(0, cdev->bar0 + CRCDEV_FETCH_CMD_READ_POS);
-	iowrite32(0, cdev->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
+	iowrite32(cdev->next_pos, cdev->bar0 + CRCDEV_FETCH_CMD_READ_POS);
+	iowrite32(cdev->next_pos, cdev->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
 	/* This is one more than actual number of cmds that can fit in */
 	iowrite32(CRCDEV_COMMANDS_LENGTH, cdev->bar0 + CRCDEV_FETCH_CMD_SIZE);
 	/* Enable fetch cmd and fetch data (there are no commands) */
@@ -145,7 +144,7 @@ static void crc_remove(struct pci_dev *pdev) {
 		goto pci_finalize_remove;
 	pci_set_drvdata(pdev, NULL);
 	if (!cdev->bar0)
-		goto pci_finalize_remove;
+		goto pci_remove_device;
 	/* START (remove) */
 	mon_device_remove_start(cdev);
 	/* Remove from sysfs and unregister char device */
@@ -162,6 +161,7 @@ static void crc_remove(struct pci_dev *pdev) {
 	pci_clear_master(pdev);
 	/* Unmap memory regions */
 	pci_iounmap(pdev, cdev->bar0); cdev->bar0 = NULL;
+pci_remove_device:
 	crc_device_put(cdev); cdev = NULL;
 pci_finalize_remove:
 	/* Reordering commented in kernel's Documentation/PCI/pci.txt */
