@@ -7,15 +7,14 @@ MODULE_LICENSE("GPL");
 
 /* Hardware abstraction layer */
 #define	cdev_next_cmd_idx(cdev, idx) (((idx) + 1) % (CRCDEV_COMMANDS_LENGTH))
-#define	cdev_write_pos(cdev) ioread32((cdev)->bar0 + CRCDEV_FETCH_CMD_WRITE_POS)
 #define	cdev_is_cmd_full(cdev)	({ \
 		BUILD_BUG_ON(CRCDEV_COMMANDS_LENGTH <= CRCDEV_BUFFERS_COUNT); \
 		0; })
 #define	cdev_pending_done(cdev)	do { (cdev)->next_pos = \
-	cdev_next_cmd_idx(cdev, (cdev)->next_pos); } while(0)
+	cdev_next_cmd_idx((cdev), (cdev)->next_pos); } while(0)
 
 static __always_inline int cdev_is_pending(struct crc_device *cdev) {
-	u32 read_pos;
+	size_t read_pos;
 	u32 status;
 	/* Do not reorder these under any circumstances */
 	read_pos = ioread32(cdev->bar0 + CRCDEV_FETCH_CMD_READ_POS);
@@ -29,7 +28,7 @@ static __always_inline int cdev_is_pending(struct crc_device *cdev) {
 
 static __always_inline void cdev_put_command(struct crc_task *task) {
 	struct crc_device *cdev = task->session->crc_dev;
-	size_t idx = cdev_write_pos(cdev);
+	size_t idx = ioread32(cdev->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
 	struct crc_command *cmd = cdev->cmd_block + idx;
 	size_t ctx = task->session->ctx;
 	cmd->count_ctx = cpu_to_le32((task->data_count & CRCDEV_CMD_COUNT_MASK)
@@ -101,7 +100,8 @@ static void crc_irq_handler_fetch_data(struct crc_device *cdev) {
 			}
 		}
 		list_del(&task->list);
-		crc_task_recycle(task);
+		task->session = NULL;
+		task->data_count = 0;
 		list_add(&task->list, &cdev->free_tasks);
 		mon_session_free_task(sess);
 		cdev_pending_done(cdev);

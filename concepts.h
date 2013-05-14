@@ -68,16 +68,6 @@ struct crc_task {
 	u8 *data;
 };
 
-static __always_inline
-void crc_task_attach(struct crc_session *sess, struct crc_task *task) {
-	task->session = sess;
-};
-
-static __always_inline void crc_task_recycle(struct crc_task *task) {
-	task->session = NULL;
-	task->data_count = 0;
-};
-
 struct crc_command {
 	__le32 addr;
 	__le32 count_ctx;

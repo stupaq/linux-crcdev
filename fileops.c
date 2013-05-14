@@ -13,7 +13,9 @@ static int crc_fileops_open(struct inode *inode, struct file *filp) {
 	struct crc_session *sess;
 	unsigned minor = iminor(inode);
 	struct crc_device *cdev = crc_device_get(minor);
-	if (cdev != container_of(inode->i_cdev, struct crc_device, char_dev))
+	filp->private_data = NULL;
+	if (cdev == NULL || cdev != container_of(inode->i_cdev, struct
+				crc_device, char_dev))
 		goto fail_dev;
 	if (!(sess = crc_session_alloc(cdev)))
 		goto fail_session;
@@ -63,7 +65,7 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		/* We know that there is a task for us (we can take only one) */
 		/* BEGIN CRITICAL (cdev->dev_lock) */
 		mon_device_lock(cdev, flags);
-		WARN_ON(list_empty(&cdev->free_tasks));
+		BUG_ON(list_empty(&cdev->free_tasks));
 		task = list_first_entry(&cdev->free_tasks, struct crc_task,
 				list);
 		list_del(&task->list);
@@ -71,7 +73,7 @@ static ssize_t crc_fileops_write(struct file *filp, const char __user *buff,
 		/* END CRITICAL (cdev->dev_lock) */
 		/* Acquired block must be returned to either free_tasks or
 		 * waiting_tasks before we leave CRITICAL (call_devwide) */
-		crc_task_attach(sess, task);
+		task->session = sess;
 		/* This may sleep */
 		to_copy = min(lcount, (size_t) CRCDEV_BUFFER_SIZE);
 		if (copy_from_user(task->data, buff, to_copy))
@@ -100,6 +102,7 @@ fail_copy:
 	/* BEGIN CRITICAL (cdev->dev_lock) */
 	mon_device_lock(cdev, flags);
 	list_add(&task->list, &cdev->free_tasks);
+	mon_session_free_task(sess);
 	mon_device_unlock(cdev, flags);
 	/* END CRITICAL (cdev->dev_lock) */
 	mon_session_call_devwide_exit(cdev, sess);
@@ -112,9 +115,8 @@ fail_reserve_task:
 	if (written == 0) return rv;
 	else return written;
 fail_call_devwide_enter:
-	/* Report error (or signal) only if haven't written anything */
-	if (written == 0) return rv;
-	else return written;
+	/* We've done nothing so far */
+	return rv;
 }
 
 /* ioctl(CRCDEV_IOCTL_SET_PARAMS) affects crc computation in an undefined way if
@@ -143,7 +145,7 @@ static int crc_ioctl_get_result(struct crc_session *sess, void __user * argp) {
 		goto fail_ioctl_comp;
 	WARN_ON(sess->scheduled_count > 0);
 	WARN_ON(sess->waiting_count > 0);
-	/* There is no waiting tasks nor concurrent write */
+	/* There are no waiting tasks nor concurrent write */
 	result.sum = sess->sum;
 	my_debug("get_result: sum %x", result.sum);
 	if (copy_to_user(argp, &result, sizeof(result)))
