@@ -78,7 +78,7 @@ struct crc_command {
 #define	CRCDEV_STATUS_REMOVED	8
 
 struct crc_device {
-	volatile unsigned long status;		// atomic bitops
+	unsigned long status;		// atomic bitops
 	/* Locks */
 	spinlock_t dev_lock;
 	struct rw_semaphore remove_lock; /* no reader will ever wait */

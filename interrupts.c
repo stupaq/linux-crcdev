@@ -42,7 +42,7 @@ static __always_inline void cdev_put_command(struct crc_task *task) {
 			le32_to_cpu(cmd->addr));
 	idx = cdev_next_cmd_idx(cdev, idx);
 	iowrite32(idx, cdev->bar0 + CRCDEV_FETCH_CMD_WRITE_POS);
-	mmiowb();
+	crc_pci_iomb(cdev->bar0);
 }
 
 static __always_inline void cdev_get_context(struct crc_session *sess) {
@@ -57,7 +57,7 @@ static __always_inline void cdev_put_context(struct crc_session *sess) {
 	BUG_ON(sess->ctx < 0 || CRCDEV_CTX_COUNT <= sess->ctx);
 	iowrite32(sess->poly, sess->crc_dev->bar0 + CRCDEV_CRC_POLY(sess->ctx));
 	iowrite32(sess->sum, sess->crc_dev->bar0 + CRCDEV_CRC_SUM(sess->ctx));
-	mmiowb();
+	crc_pci_iomb(sess->crc_dev->bar0);
 	my_debug("irq: put: ctx %u poly %x sum %x", sess->ctx, sess->poly,
 			sess->sum);
 }
