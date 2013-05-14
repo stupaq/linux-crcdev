@@ -41,6 +41,7 @@ void crc_reset_device(void __iomem* bar0) {
 	iowrite32(0, bar0 + CRCDEV_ENABLE);
 	/* Disable interrupts */
 	iowrite32(0, bar0 + CRCDEV_INTR_ENABLE);
+	crc_pci_iomb(bar0);
 	/* Set empty FETCH_DATA buffer */
 	iowrite32(0, bar0 + CRCDEV_FETCH_DATA_COUNT);
 	/* Set empty FETCH_CMD buffer */

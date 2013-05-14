@@ -4,6 +4,38 @@
 #include "concepts.h"
 #include "pci.h"
 
+/** SYNCHRONIZATION SCHEMA:
+ * mon_device_{lock,unlock}
+ * - short period locking (spinlock) of crc_device data structure
+ * - not necessary for reading status flags
+ * - prevents interrupt handler from servicing this device
+ * mon_device_ready_start
+ * - invoked after successful initialization of a device (before first task)
+ * mon_device_remove_start
+ * - starts device removal procedure, after this call neither interrupt handler
+ *   nor syscall would try to use device
+ * mon_session_call_{enter,exit}
+ * - serialization of syscalls, one cannot use device directly or acquire
+ *   session_call_devwide
+ * mon_session_call_devwide_{enter,exit}
+ * - serialization of syscalls, one is guaranteed that device will not be
+ *   removed until he leaves this monitor
+ * - one cannot acquire plain session_call
+ * mon_session_reserve_task
+ * - grants a permission to obtain one free task and put it in waiting tasks
+ *   queue (at the end), one is guaranteed that there is a task waiting for him
+ * mon_session_free_task
+ * - signals that there is a newly added free task in free tasks queue
+ * mon_session_tasks_wait*
+ * - waits for completion of all scheduled tasks, cannot be called when one
+ *   acquired session_call_devwide
+ * SAFE SCENARIOS:
+ * session_call > session_tasks_wait (ioctl)
+ * session_call_devwide > session_reserve_task > device_lock (write)
+ * device_lock (irq handler)
+ * session_tasks_wait (release)
+ **/
+
 #define crc_error_hot_unplug() printk(KERN_WARNING \
 		"crcdev: device removed while there was pending syscall")
 
@@ -84,9 +116,9 @@ int __must_check mon_session_reserve_task(struct crc_session *sess) {
 		goto fail_removed;
 	return rv;
 fail_removed:
-	crc_error_hot_unplug();
 	/* We let another guy know about this */
 	up(&cdev->free_tasks_wait);
+	crc_error_hot_unplug();
 	return -ENODEV;
 fail_free_tasks_wait:
 	return rv;
@@ -128,11 +160,14 @@ int mon_session_tasks_wait(struct crc_session *sess) {
 
 static __always_inline
 void mon_device_ready_start(struct crc_device *cdev) {
+	unsigned long flags;
+	/* BEGIN CRITICAL (cdev->dev_lock) */
+	mon_device_lock(cdev, flags);
 	set_bit(CRCDEV_STATUS_READY, &cdev->status);
-	/* END CRITICAL (cdev->dev_lock) - no one alive new about our device */
+	mon_device_unlock(cdev, flags);
+	/* END CRITICAL (cdev->dev_lock) */
 }
 
-// FIXME prove with new reordering
 static __always_inline
 void mon_device_remove_start(struct crc_device *cdev) {
 	unsigned long flags;
@@ -141,17 +176,16 @@ void mon_device_remove_start(struct crc_device *cdev) {
 	mon_device_lock(cdev, flags);
 	/* Interrupts will start to abort from now */
 	clear_bit(CRCDEV_STATUS_READY, &cdev->status);
+	/* New syscalls and awoken ones will start to fail with -ENODEV */
+	set_bit(CRCDEV_STATUS_REMOVED, &cdev->status);
 	/* This stops DMA activity and disables interrupts */
 	crc_reset_device(cdev->bar0);
 	mon_device_unlock(cdev, flags);
 	/* END CRITICAL (cdev->dev_lock) */
 
-	/* New syscalls and awoken ones will start to fail with -ENODEV */
-	set_bit(CRCDEV_STATUS_REMOVED, &cdev->status);
-	/* Wakeup all waiting remove_lock holders */
-	/* After this up() every process waiting or just-to-be waiting on
-	 * free_tasks_wait will spot STATUS_REMOVED flags and reup() the
-	 * semaphore, all waiters will wake up sequentially */
+	/* Wakeup all waiting remove_lock holders, every process waiting or
+	 * just-to-be waiting on free_tasks_wait will spot STATUS_REMOVED flags
+	 * and reup() the semaphore, all waiters will wake up sequentially */
 	up(&cdev->free_tasks_wait);
 
 	/* Acquire remove_lock, all readers with remmove_lock are woken up and
@@ -163,7 +197,7 @@ void mon_device_remove_start(struct crc_device *cdev) {
 	/* Wakeup all waiting ioctls, to do this we have to complete_all() all
 	 * not completed ioctl_comp in sessions. We can't reach all sessions,
 	 * but only those who have waiting/scheduled tasks.
-	 * REMARK: ioctl_compl is completed `iff` it has no tasks
+	 * REMARK: ioctl_compl is completed `iff` session has no tasks
 	 * therefore we can scan waiting and scheduled tasks only */
 	/* BEGIN CRITICAL (cdev->dev_lock) */
 	mon_device_lock(cdev, flags);
