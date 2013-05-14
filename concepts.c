@@ -122,7 +122,6 @@ int __must_check crc_device_dma_alloc(struct pci_dev *pdev,
 		goto fail;
 	atomic_inc(&crc_gc.dma_blocks);
 	for (count = 0; count < CRCDEV_BUFFERS_COUNT; count++) {
-		// TODO deal with smaller number of blocks too
 		if (!(task = kzalloc(sizeof(*task), GFP_KERNEL)))
 			goto fail;
 		atomic_inc(&crc_gc.tasks);

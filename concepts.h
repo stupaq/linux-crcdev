@@ -20,8 +20,6 @@
 #define my_debug(fmt, args...)
 #endif  // CRC_DEBUG
 
-// TODO deal with less blocks than exact count
-#define	CRCDEV_BUFFERS_LOWER	8
 #define	CRCDEV_BUFFERS_COUNT	24
 #define	CRCDEV_COMMANDS_LENGTH	(CRCDEV_BUFFERS_COUNT + 1)
 #define	CRCDEV_BUFFER_SIZE	(PAGE_SIZE * 4)

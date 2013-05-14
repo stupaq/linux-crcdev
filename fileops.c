@@ -119,42 +119,25 @@ fail_call_devwide_enter:
 	return rv;
 }
 
-/* ioctl(CRCDEV_IOCTL_SET_PARAMS) affects crc computation in an undefined way if
- * called after write but before ioctl(CRCDEV_IOCTL_GET_RESULT) */
 /* CRITICAL (call) */
 static int crc_ioctl_set_params(struct crc_session *sess, void __user * argp) {
 	struct crcdev_ioctl_set_params params = { 0, 0 };
 	if (copy_from_user(&params, argp, sizeof(params)))
-		goto fail_copy;
-	/* This can corrupt concurrent computation */
+		return -EFAULT;
 	sess->poly = params.poly;
 	sess->sum = params.sum;
 	my_debug("set_params: poly %x sum %x", params.poly, params.sum);
 	return 0;
-fail_copy:
-	return -EFAULT;
 }
 
 /* CRITICAL (call) */
 static int crc_ioctl_get_result(struct crc_session *sess, void __user * argp) {
-	int rv;
 	struct crcdev_ioctl_get_result result = { 0 };
-	/* Wait for all tasks to complete, there is no concurrent write (no one
-	 * can reinitialize this completion) */
-	if ((rv = mon_session_tasks_wait_interruptible(sess)))
-		goto fail_ioctl_comp;
-	WARN_ON(sess->scheduled_count > 0);
-	WARN_ON(sess->waiting_count > 0);
-	/* There are no waiting tasks nor concurrent write */
 	result.sum = sess->sum;
 	my_debug("get_result: sum %x", result.sum);
 	if (copy_to_user(argp, &result, sizeof(result)))
-		goto fail_copy;
-	return rv;
-fail_copy:
-	return -EFAULT;
-fail_ioctl_comp:
-	return rv;
+		return -EFAULT;
+	return 0;
 }
 
 static long crc_fileops_ioctl(struct file *filp, unsigned int cmd, unsigned long
@@ -165,6 +148,11 @@ static long crc_fileops_ioctl(struct file *filp, unsigned int cmd, unsigned long
 	/* ENTER (call) */
 	if ((rv = mon_session_call_enter(sess)))
 		goto fail_call_enter;
+	/* Wait for all tasks to complete, there is no concurrent write (no one
+	 * can reinitialize this completion) */
+	if ((rv = mon_session_tasks_wait_interruptible(sess)))
+		goto fail_ioctl_comp;
+	/* There are no waiting tasks nor concurrent write */
 	switch (cmd) {
 	case CRCDEV_IOCTL_SET_PARAMS:
 		rv = crc_ioctl_set_params(sess, argp);
@@ -174,11 +162,14 @@ static long crc_fileops_ioctl(struct file *filp, unsigned int cmd, unsigned long
 		break;
 	default:
 		printk(KERN_WARNING "crcdev: unrecognized ioctl %u", cmd);
-		rv = -EINVAL;
+		rv = -ENOTTY;
 	}
 	mon_session_call_exit(sess);
 	/* EXIT (call) */
 	return rv;
+fail_ioctl_comp:
+	mon_session_call_exit(sess);
+	/* EXIT (call) */
 fail_call_enter:
 	return rv;
 }
@@ -188,7 +179,6 @@ struct file_operations crc_fileops_fops = {
 	.open = crc_fileops_open,
 	.release = crc_fileops_release,
 	.write = crc_fileops_write,
-	// FIXME can set both to the same handler?
 	.unlocked_ioctl = crc_fileops_ioctl,
 	.compat_ioctl = crc_fileops_ioctl,
 	/* We do not support llseek */

@@ -89,7 +89,6 @@ static int crc_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
 	crc_reset_device(cdev->bar0);
 	/* Device won't try to do anything */
 	pci_set_master(pdev);
-	// TODO Q: check 64 bit mask if sizeof(dma_addr_t) > sizeof(u32)?
 	if ((rv = pci_set_dma_mask(pdev, DMA_BIT_MASK(CRCDEV_DMA_BITS))))
 		goto fail;
 	if ((rv = pci_set_consistent_dma_mask(pdev,

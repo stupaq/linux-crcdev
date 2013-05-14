@@ -14,7 +14,7 @@
 
 static __always_inline __must_check
 int __must_check mon_session_call_enter(struct crc_session *sess) {
-	int rv = 0;
+	int rv;
 	struct crc_device *cdev = sess->crc_dev;
 	/* BEGIN CRITICAL (sess->call_lock) */
 	if ((rv = mutex_lock_interruptible(&sess->call_lock)))
@@ -55,10 +55,6 @@ int __must_check mon_session_call_devwide_enter(struct crc_device *cdev,
 fail_removed_2:
 	up_read(&cdev->remove_lock);
 	/* END CRITICAL (cdev->remove_lock) READ */
-	mon_session_call_exit(sess);
-	/* EXIT (call) */
-	crc_error_hot_unplug();
-	return -ENODEV;
 fail_remove_lock:
 	mon_session_call_exit(sess);
 	/* EXIT (call) */
@@ -113,6 +109,8 @@ int mon_session_tasks_wait_interruptible(struct crc_session *sess) {
 		crc_error_hot_unplug();
 		return -ENODEV;
 	}
+	WARN_ON(sess->scheduled_count > 0);
+	WARN_ON(sess->waiting_count > 0);
 	return 0;
 }
 
@@ -123,10 +121,11 @@ int mon_session_tasks_wait(struct crc_session *sess) {
 		crc_error_hot_unplug();
 		return -ENODEV;
 	}
+	WARN_ON(sess->scheduled_count > 0);
+	WARN_ON(sess->waiting_count > 0);
 	return 0;
 }
 
-/* OK */
 static __always_inline
 void mon_device_ready_start(struct crc_device *cdev) {
 	set_bit(CRCDEV_STATUS_READY, &cdev->status);
