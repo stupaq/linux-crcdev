@@ -1,11 +1,12 @@
-PROGS = simple long thread mux rmux
-EXTRA_SRC = crcdev_if.c gen.c
-CFLAGS = -Wall
+BINARIES	:= simple long thread mux rmux
+EXTRA_SRC	:= ../userland/crcdev_if.c gen.c
 
-all: $(PROGS)
+CFLAGS		:= -pthread -Wall -I../userland
+
+all: $(BINARIES)
 
 %: %.c $(EXTRA_SRC)
-	gcc -pthread $(CFLAGS) $< $(EXTRA_SRC) -o $@
+	gcc $(CFLAGS) $< $(EXTRA_SRC) -o $@
 
 clean:
-	rm -rf $(PROGS)
+	rm -rf $(BINARIES)
